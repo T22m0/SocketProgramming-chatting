@@ -1,0 +1,46 @@
+#include <stdio.h>      
+#include <sys/types.h>
+#include <string.h> 
+#include "Main.h"
+#include "network.h"
+
+int server_socket;
+struct sockaddr_in* server_addr=NULL;
+int client_socket;
+struct sockaddr_in* client_addr=NULL;
+
+unsigned short int income_port;
+char mode;
+
+char* getIP() {
+	int tmp_sfd;
+	struct sockaddr_in* temp = NULL;
+	if((tmp_sfd = socket(AF_INET, SOCK_DGRAM,0)) == -1){
+		perror("ERROR! CAN NOT GET IP! : ");
+	} 
+} 
+void init(){
+	
+	switch(mode){		
+		case 's':
+			if((server_socket = socket(AF_INET, SOCK_STREAM,0)) == -1){
+				perror("ERROR! CREATING SOCK :");
+				exit(0);
+			}
+			//creating server_socket with IP4!
+
+			bzero(&server_addr,sizeof(server_addr));
+			//initializing socket structure for unsigned char sin_zero[8]
+			server_addr->sin_family = AF_INET;
+			server_addr->sin_port = htons(income_port);
+			server_addr->sin_addr =  inet_addr(getIP());
+
+		case 'c':
+		default:
+			break;
+	}
+	temp = gethostbyname("timberlake.cse.buffalo.edu");
+	printf("%s\n",inet_ntoa(*((struct in_addr *)temp->h_addr)));
+
+}    
+
