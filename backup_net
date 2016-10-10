@@ -34,11 +34,11 @@ unsigned short int income_port;
 char mode;
 //_____________________________________________//
 //_________________For server_________________//
-server serv_IP[MAX_CONNECT];
+sock serv_IP[MAX_CONNECT];
 int num_connection;
 //____________________________________________//
 //_________________For client________________//
-int cli_IP[MAX_CLI_CONNECT];
+sock cli_IP[MAX_CLI_CONNECT];
 int cli_con_max;
 //______________________________________________//
 //_______________GENERAL PURPOSE________________//
@@ -88,60 +88,97 @@ char* getHost(struct sockaddr_in addr){
 }
 // will return hostname from IP address and sve to gethost
 char* getIP() {
-	int tmp_sfd;
-	struct sockaddr_in temp;
-	//make temp socket fd and sockaddr_in
+ 	sock temp;
+	bzero(&temp,sizeof(temp)); 
+	//zeroing all member in temp
 	
-	if((tmp_sfd = socket(AF_INET, SOCK_DGRAM,0)) == -1){
+	if((temp.sock = socket(AF_INET, SOCK_DGRAM,0)) == -1){
 		perror("ERROR! CAN NOT GET IP! : ");
 		exit(1);
 	}
 	//make new socket using UDP!
-	
-	bzero(&temp,sizeof(temp)); 
-	//zeroing all member in temp
-	
-	temp.sin_family = AF_INET;
-	temp.sin_port = htons(53);
-	temp.sin_addr.s_addr=inet_addr("8.8.8.8");
-	//set destin information: Google - 8.8.8.8 and UDP port 53 using IPv4
-	
-???LINES MISSING
-???LINES MISSING
-			serv_IP[0].sock_info.sin_port = htons(income_port);
-			//using port from the argv for listening
-			serv_IP[0].sock_info.sin_addr.s_addr = inet_addr(getIP());
-			//set listening IP to local IP
-			if(bind(serv_IP[0].sock, (struct sockaddr*)&serv_IP[0].sock_info, sizeof(serv_IP[0])) == -1){
-				perror("Serv- BIND ERR:");
-				exit(1);
-			}
-			//then bind it, if it fails, print out the error
-			if(listen(serv_IP[0].sock, BACKLOG) == -1){
-				perror("LISTEN ERR:");
-				exit(1);
-			}
-			num_connection = 1;
-			break;
 
-		case 'c':
+	temp.sock_info.sin_family = AF_INET;
+	temp.sock_info.sin_port = htons(53);
+	temp.sock_info.sin_addr.s_addr=inet_addr("8.8.8.8");
+	//set destin information: Google - 8.8.8.8 and UDP port 53 using IPv4	
+	//
+	if((connect(temp.sock, (struct sockaddr*)&temp.sock_info, sock_len)) == -1) perror("CANNOT GET MY IP:");
+	//connect to google server via udp
+	
+	if((getsockname(temp.sock, (struct sockaddr*)&temp.sock_info,&sock_len)) == -1) perror("CanNOT GET SOCK INFO");
+	//retrieve my socket information on google's side and save to
+	
+	inet_ntop(AF_INET, &temp.sock_info.sin_addr, getip, INET_ADDRSTRLEN);
+	//and resolve network address to string IP format
+	//
+	return getip;
+}
+//get public ip using UDP connection 
+void LIST(){
+	int count;
+	for(count=0; count < MAX_CONNECT; count++){
+		if(serv_IP[count].sock != 0){
+			sprintf(list+strlen(list),"%d:	%s		%s	%d\n"\
+			,count, getHost(serv_IP[count].sock_info),inet_ntoa(serv_IP[count].sock_info.sin_addr), ntohs(serv_IP[count].sock_info.sin_port));
+		}
+	}
+}
+int runServ(){
+}
+int cli_parse(char** token){
+}
+void init(){
+	switch(mode){
+	case 's':
+		sprintf(list, "id:	Hostnamed				IP		port\n");
+		//init LIST format
+
+		bzero(&serv_IP, sizeof(serv_IP));
+		//init server array with zeros
+
+		if((serv_IP[0].sock = socket(AF_INET, SOCK_STREAM, 0)) ==-1){
+			perror("Error! Sockcreate - serv:");
+			exit(1);
+		}
+		serv_IP[0].sock_info.sin_family = AF_INET;
+		//using tcp 
+		serv_IP[0].sock_info.sin_port = htons(income_port);
+		//using port from the argv for listening
+		serv_IP[0].sock_info.sin_addr.s_addr = inet_addr(getIP());
+		//set listening IP to local IP
+		if(bind(serv_IP[0].sock, (struct sockaddr*)&serv_IP[0].sock_info, sizeof(serv_IP[0])) == -1){
+			perror("Serv- BIND ERR:");
+			exit(1);
+		}
+		//then bind it, if it fails, print out the error
+		if(listen(serv_IP[0].sock, BACKLOG) == -1){
+			perror("LISTEN ERR:");
+			exit(1);
+		}
+		num_connection = 1;
+		printf("%s my ip\n",getIP());
+		LIST();
+		printf(list);
+		break;
+
+	case 'c':
 		//same for client except, it only needs to create socket
-			if((cli_IP[0] = socket(AF_INET, SOCK_STREAM, 0))==-1){
-				perror("ERROR! SOCKCREATE:");
-				exit(1);
-			}
-			bzero(&t_addr, sizeof(t_addr));
-			t_addr.sin_family = AF_INET;
-			t_addr.sin_port = htons(income_port);
-			t_addr.sin_addr.s_addr = inet_addr(getIP());
-		
-			int temp;
-			if((temp=bind(cli_IP[0], (struct sockaddr*)&t_addr, sizeof(t_addr))) == -1){
-				perror("Cli- BIND ERR:");
-				exit(1);
-			}
-			cli_con_max = 1;	
-			break;
+		bzero(&cli_IP, sizeof(cli_IP));
+
+		if((cli_IP[0].sock = socket(AF_INET, SOCK_STREAM, 0))==-1){
+			perror("ERROR! SOCKCREATE-cli :");
+			exit(1);
+		}
+		cli_IP[0].sock_info.sin_family = AF_INET;
+		cli_IP[0].sock_info.sin_port = htons(income_port);
+		cli_IP[0].sock_info.sin_addr.s_addr = inet_addr(getIP());
+		if((bind(cli_IP[0].sock, (struct sockaddr*)&t_addr, sizeof(t_addr))) == -1){
+			perror("Cli- BIND ERR:");
+			exit(1);
+		}
+		cli_con_max = 1;	
+		break;
 	}
 }
 //initializing socket for server or client 

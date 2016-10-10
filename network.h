@@ -10,12 +10,14 @@
 #define BACKLOG 10
 #define MAX_MSG 100
 #define MAX_LIST 512
-//server\
-_______________________________________//
+
 typedef struct{
 	int sock;
 	struct sockaddr_in sock_info;
-}server;
+}sock;
+
+//server\
+_______________________________________//
 extern int num_connection;
 //counter of connection to server
 
