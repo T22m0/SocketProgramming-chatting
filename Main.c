@@ -1,7 +1,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include "Main.h"
+#include "network.h"
 
 unsigned short int income_port;
 char mode;
@@ -25,9 +25,17 @@ int main(int argc, char *argv[]){
 				printf("you need to type valid port number!!: 1024 < x < 65535 [port number over 1024 is recommended]\n ");
 			}else{
 				income_port = temp;
-				
+				init();
+				int exit;
+				if(mode == 's'){
+					printf("You opened a new server\n");
+					exit = runServ();
+				}else{
+
+					printf("You opened a new client\n");
+					exit = runCli();
+				}
 				//if all valid, run shell!
-				shell();
 			}
 		}else{
 			printf("You need to specify mode of the program : either 's' - server or 'c' - client\n");

@@ -6,10 +6,24 @@
 //To use sockaddr_in
 
 #define MAX_CONNECT 21
-#define MAX_CLI_CONNECT 4  
+#define MAX_CLI_CONNECT 5 
 #define BACKLOG 10
 #define MAX_MSG 100
 #define MAX_LIST 512
+#define MAX_COMMAND 128
+
+#define TRUE 1
+#define FALSE 0
+/*make boolean values*/
+
+extern unsigned int numTok;
+/*numTok represents number of Token read from users*/
+
+extern unsigned short int income_port;
+/*port represents port number as an argument of program.*/
+
+extern char mode;
+/*mode represents if an user is whether client or server*/
 
 typedef struct{
 	int sock;
@@ -27,10 +41,10 @@ ________________________________________________//
 extern int cli_con_max;
 //counter of connection of clients. limited to 3
 
-
-char* getIP(void);
-void init(void);
-int cli_parse(char **token);
+int runCli(void);
 int runServ(void);
+void init(void);
 
+char* readLine(void);
+char** parseTok(char* input);
 #endif
