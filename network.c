@@ -42,12 +42,18 @@ char mode;
 //_________________For server_________________//
 sock serv_IP[MAX_CONNECT];
 int num_connection;
+char r_command[MAX_COMMAND];
+//for server, used for receive msg from clients
 //____________________________________________//
 //_________________For client________________//
 sock cli_IP[MAX_CLI_CONNECT];
 int cli_con_max;
 //______________________________________________//
 //_______________GENERAL PURPOSE________________//
+fd_set readfds, tempfds;
+//for multiplexing of inputs from keyboard and sockets,
+int fd_count;
+//will used to count how many inputs are coming
 struct sockaddr_in t_addr;
 //buff socket for general use
 socklen_t sock_len = sizeof(t_addr);
@@ -59,6 +65,9 @@ char gethost[50];
 //for gethost buffer for saving hostname
 char list[MAX_LIST];
 //for LIST method();
+char message[MAX_MSG];
+//for sending and receiving message
+
 char *command;
 char **tokens;
 //_________________________________________________//
@@ -86,8 +95,14 @@ int findEmptySock(){
 int findMaxFd(int cur_sock){
 	int i;
 	int maxfd=0;
-	for(i = 0; i < MAX_CONNECT; i++){
-		if(serv_IP[i].sock > maxfd && maxfd < cur_sock) maxfd = serv_IP[i].sock;
+	if(mode == 's'){
+		for(i = 0; i < MAX_CONNECT; i++){
+			if(serv_IP[i].sock > maxfd && maxfd < cur_sock) maxfd = serv_IP[i].sock;
+		}
+	}else{
+		for(i = 0; i< MAX_CLI_CONNECT; i++){
+			if(cli_IP[i].sock > maxfd && maxfd < cur_sock) maxfd = cli_IP[i].sock;
+		}
 	}
 	return maxfd;
 }
@@ -133,6 +148,9 @@ char* getLOIP() {
 	//and resolve network address to string IP format
 	return getip;
 }
+int scan_closed(){
+	return 0;
+}
 //get public ip using UDP connection 
 void LIST(){
 	sprintf(list, "id:	Hostnamed				IP		port\n");
@@ -142,7 +160,7 @@ void LIST(){
 		for(count=0; count < MAX_CONNECT; count++){
 			if(serv_IP[count].sock != 0){
 				sprintf(list+strlen(list),"%d:	%s		%s	%d\n"\
-				,count, getHost(serv_IP[count].sock_info),inet_ntoa(serv_IP[count].sock_info.sin_addr), ntohs(serv_IP[count].sock_info.sin_port));
+				,count, getHost(serv_IP[count].sock_info),inet_ntoa(serv_IP[count].sock_info.sin_addr), ntohs(serv_IP[count].sock_info.sin_port)-1);
 			}
 		}
 	}else{
@@ -153,19 +171,22 @@ void LIST(){
 			}
 		}
 	}
+	printf(list);
 	/*It will make a list of connected hosts to caller
  	 *If the server calls this, it will make list based on server's list
 	 *But if a client calls List, it will build list based on client's connected list*/
 }
+void broadcast_msg(char* msg){
+	int i;
+	for(i = 1; i <MAX_CONNECT; i++){
+		if(serv_IP[i].sock != 0){
+			send(serv_IP[i].sock, msg, strlen(msg),0);
+		}
+	}	
+}
 int runServ(){
-	fd_set readfds, tempfds;
-	//for multiplexing of inputs from keyboard and sockets,
 	int maxfd = serv_IP[0].sock;
 	//set current range of selection is socket# of server
-	int fd_count;
-	//will used to count how many inputs are coming
-	FD_ZERO(&readfds);
-	//init fd_set
 	FD_SET(serv_IP[0].sock,&readfds);
 	FD_SET(0,&readfds);	
 	//mark stdin and socket# of server
@@ -174,12 +195,12 @@ int runServ(){
 		fprintf(stderr,"PA1> ");
 		tempfds = readfds;
 		//renew fd_set
-//		fd_count = select(maxfd+1, &tempfds,NULL,NULL,NULL);
-		//wait until something is coming...
-		fd_count =0;
 		fd_count = select(maxfd+1,&tempfds, NULL,NULL,NULL);
-
+		//wait until something happens..
+		
 		while(fd_count-- > 0){
+		//decreade fd_count because we know something will be done in here.
+
 			if(FD_ISSET(serv_IP[0].sock,&tempfds)){
 			//if a client tries to connect to sever
 				int freespot = findEmptySock();
@@ -199,13 +220,14 @@ int runServ(){
 					FD_SET(serv_IP[freespot].sock,&readfds);
 					//mark client on readfds
 					LIST();
-					//renew the list
-					printf(list);
-					//and print it to the server too
+					broadcast_msg(list);
+					//broadcast all client!
 					num_connection++;
 				}else{
+				//what..? not registering.. someone's hacking..
 					close(serv_IP[freespot].sock);
 					serv_IP[freespot].sock =0;
+					//close the connection and wipeout the socket number
 					continue;
 				}
 			}else if(FD_ISSET(0,&tempfds)){
@@ -215,15 +237,18 @@ int runServ(){
 				//parse the reader input and tokenize it.
 				if(tokens[0] == '\0'){
 					continue;
+				//empty input.. ignore
 				}else if(strcmp(tokens[0], "HELP") ==0 && numTok == 1){
 					printf(serv_usage);
+				//print out server usage
 				}else if(strcmp(tokens[0],"DISPLAY")==0 && numTok == 1){
 					printf(display);
 					printf(" %s \n",getLOIP());
 					printf("Income port : %d", income_port);
+				//print current machine info
 				}else if(strcmp(tokens[0], "LIST") ==0 && numTok ==1){
 					LIST();
-					printf(list);
+				//LIST current connection
 				}else if(strcmp(tokens[0], "QUIT") == 0 && numTok ==1){
 
 				}else{
@@ -231,7 +256,42 @@ int runServ(){
 				}
 			}else{
 			//message from other clients
-				fd_count =0;
+				int t;
+				for(t =1; t<MAX_CONNECT; t++){
+				//from first client index of serv_IP
+					if(FD_ISSET(serv_IP[t].sock,&tempfds)){			
+					//if the socket is triggered..
+						int terminator = recv(serv_IP[t].sock, r_command, MAX_COMMAND, 0);
+						//try to read from te client
+						if(terminator ==0){
+						//but if figured out the client is left for nothing..
+							printf("CLIENT LEFT!!\n");
+							maxfd =	findMaxFd(serv_IP[t].sock);
+							//find next highest socket and assign to maxfd							
+							close(serv_IP[t].sock);
+							//finish the socket
+							FD_CLR(serv_IP[t].sock,&readfds);
+							//unmark from readfds
+							serv_IP[t].sock = 0;
+							//init socket number.
+							LIST();
+							//update list and
+							broadcast_msg(list);
+							//broadcast to the clients
+							num_connection--;
+						}else{
+						//if there is incoming..
+							r_command[terminator]='\0';
+							tokens = parseTok(r_command);
+							//parse token.
+							if(strcmp(tokens[0], "LIST")==0 && numTok ==1){
+								send(serv_IP[t].sock, list, MAX_LIST,0);
+							}
+						}
+					}
+					if(fd_count-- < 0) break;
+					//need to check so that another epoch of select could excute
+				}
 			}
 		}
 			//processing keyboard input from server itself..
@@ -239,11 +299,8 @@ int runServ(){
 }
 
 int runCli(){
-	fd_set readfds, tempfds;
 	int maxfd = cli_IP[0].sock;
-	int fd_count;
 	int REGISTERED = FALSE;
-	FD_ZERO(&readfds);
 	FD_SET(cli_IP[0].sock,&readfds);
 	FD_SET(0,&readfds);	
 	//initial setting of client just same as the server
@@ -252,10 +309,9 @@ int runCli(){
 		//init number of TOken and print out the shell
 		tempfds = readfds;
 		//renew the fdset
-		fd_count =0;
+		
 		fd_count = select(maxfd+1,&tempfds, NULL,NULL,NULL);
-		while(fd_count > 0){
-		fd_count--;
+		while(fd_count-- > 0){
 		//wait until there is an input and starts to work at coming inputs.
 			if(FD_ISSET(cli_IP[0].sock,&tempfds)){
 			//if other clients connecto this client.	
@@ -273,6 +329,7 @@ int runCli(){
 						send(cli_IP[freespot].sock, "c",sizeof("c"),0);
 						close(cli_IP[freespot].sock);
 						cli_IP[freespot].sock =0;
+						continue;
 					}else{
 						if(cli_IP[freespot].sock > maxfd) maxfd = cli_IP[freespot].sock;
 						//if socketnubmer of newly connected socket is larger than original maxfd, update its value.
@@ -281,7 +338,6 @@ int runCli(){
 						LIST();
 						//renew the list
 						printf("NEW Friend!\n");
-						printf(list);
 						//and print out the list.
 						cli_con_max++;
 						//increase number of connection by 1
@@ -305,60 +361,70 @@ int runCli(){
 					printf("Income port : %d", income_port);
 				}else if(strcmp(tokens[0], "REGISTER") == 0 && numTok ==3){
 				//register to the server!
-					if((cli_IP[1].sock = socket(AF_INET, SOCK_STREAM,0))!=-1){
-					//made new socket to connect to the server 
-						cli_IP[1].sock_info.sin_family = AF_INET;
-						//use ipv4
-						cli_IP[1].sock_info.sin_port = htons(atoi(tokens[2]));
-						//set typed port number
-					
-						if(isValidIP(tokens[1])) cli_IP[1].sock_info.sin_addr.s_addr = inet_addr(tokens[1]);
-						//if given domain is in IPaddr form, just put that in addr section
-						else{ 
-						//or if it is hostname
-							if(strcmp((getIP(tokens[1])),"NA")==0){
-								printf("You put wrong hostname..");
-								continue;
-							}
-							//get ip with given host name and if cannot resolve.. print error and continue..
-							else cli_IP[1].sock_info.sin_addr.s_addr =inet_addr(getip);
-							//or assign ipaddress.
-						}
-						if((connect(cli_IP[1].sock,(struct sockaddr*) & cli_IP[1].sock_info, sock_len))==-1){
-							perror("Cannot Register, Check the domain or port");
+			           if(REGISTERED==FALSE){
+					cli_IP[1].sock_info.sin_port = htons(atoi(tokens[2]));
+					//set typed port number
+					if(isValidIP(tokens[1])) cli_IP[1].sock_info.sin_addr.s_addr = inet_addr(tokens[1]);
+					//if given domain is in IPaddr form, just put that in addr section
+					else{ 
+					//or if it is hostname
+						if(strcmp((getIP(tokens[1])),"NA")==0){
+							printf("You put wrong hostname..\n");
 							continue;
 						}
-						//connect to the server
-						
-						send(cli_IP[1].sock,"R",sizeof("R"),0);
-						//let them know that i am trying to register..
-
-						char ans[3];
-						int terminator = recv(cli_IP[1].sock, ans, strlen(ans),0);
-						ans[terminator] = '\0';
-						//receive from server that it is really the server
-						if(ans[0]=='s'){	
-						//if server everything is good!
-							FD_SET(cli_IP[1].sock,&readfds);
-							maxfd = cli_IP[0].sock > cli_IP[1].sock ? cli_IP[0].sock : cli_IP[1].sock;
-							cli_con_max++;
-							REGISTERED = TRUE;
-							LIST();
-							printf(list);
-						}else{
-							close(cli_IP[1].sock);
-							cli_IP[1].sock = 0;
-							printf("you are not connecting to the server..\n");
-						}
-					}else{
+						//get ip with given host name and if cannot resolve.. print error and continue..
+						else cli_IP[1].sock_info.sin_addr.s_addr =inet_addr(getip);
+						//or assign ipaddress.
+					}					
+					if((connect(cli_IP[1].sock,(struct sockaddr*) & cli_IP[1].sock_info, sock_len))==-1){
+					//pass server binded socket number
+						perror("Cannot Register, Check the domain or port");
+						continue;
 					}
+					//connect to the server
+					
+					send(cli_IP[1].sock,"R",sizeof("R"),0);
+					//let them know that i am trying to register..
+					char ans[3];
+					int terminator = recv(cli_IP[1].sock, ans, strlen(ans),0);
+					ans[terminator] = '\0';
+					//receive from server that it is really the server
+					if(ans[0]=='s'){	
+						//if server everything is good!
+						FD_SET(cli_IP[1].sock,&readfds);
+						maxfd = cli_IP[0].sock > cli_IP[1].sock ? cli_IP[0].sock : cli_IP[1].sock;
+						cli_con_max++;
+						REGISTERED = TRUE;	
+					}else{
+						close(cli_IP[1].sock);
+						cli_IP[1].sock = 0;
+						printf("you are not connecting to the server..\n");
+					}
+				   }else{
+					printf("YOU ALREADY REGISTERED TO SERVER\n");
+					continue;
+				   }
 				}else if(strcmp(tokens[0], "CONNECT") ==0 && numTok ==3){
-
+					if(REGISTERED){
+					}else{
+						printf("YOU SHOULD REGISTER YOURSELF TO SERVER BEFORE CONNECT..\n");
+						continue;
+					}
 				}else if(strcmp(tokens[0], "LIST") ==0 && numTok ==1){
-					LIST();
-					printf(list);
+					if(REGISTERED){
+						printf("__________CONNECTED CLIENT IP LIST_______\n");
+						LIST();
+						printf("__________SERVER CLIENT IP LIST__________\n");
+						send(cli_IP[1].sock, "LIST", strlen("LIST"),0);
+						int terminator = recv(cli_IP[1].sock, list, MAX_LIST,0);
+						if(terminator) list[terminator] = '\0';
+						printf(list);
+					}else{
+						printf("YOU SHOULD REGISTER TO GET FRIEND LIST!\n");
+						continue;
+					}
 				}else if(strcmp(tokens[0], "TERMINATE") ==0 && numTok ==2){
-
+					
 				}else if(strcmp(tokens[0], "QUIT") == 0 && numTok ==1){
 
 				}else if(strcmp(tokens[0], "SEND") == 0 && numTok > 3 && numTok < 40){
@@ -367,15 +433,55 @@ int runCli(){
 					printf(cli_usage);
 				}
 			}else{
-				fd_count =0;
-			//message from other clients
+			//message from other clients or server..
+				int t;
+				for(t =1; t<MAX_CLI_CONNECT; t++){
+				//from first client index of cli_IP
+					if(FD_ISSET(cli_IP[t].sock,&tempfds)){			
+					//if the socket is triggered..
+						int terminator;
+						if(t == 1){
+						//message from the server
+							if((terminator = recv(cli_IP[t].sock, list, MAX_LIST, 0)) != 0){
+							//if client can read from server,
+								list[terminator]='\0';
+								printf(list);
+							}else{
+							//server is gone.. so as other client..
+								//do close every socket.. update every thing 귀찮..지금은..
+							}	
+						}else{
+						//message from other clients
+							if((terminator = recv(cli_IP[t].sock, message, MAX_MSG, 0)) != 0){
+								message[terminator]='\0';
+								printf(message);
+							}else{
+								printf("CLIENT LEFT!!\n");
+								maxfd =	findMaxFd(cli_IP[t].sock);
+								//find next highest socket and assign to maxfd							
+								close(cli_IP[t].sock);
+								//finish the socket
+								FD_CLR(cli_IP[t].sock,&readfds);
+								//unmark from readfds
+								cli_IP[t].sock = 0;
+								//init socket number.
+								LIST();
+								//update list and
+								cli_con_max--;
+							}
+						}
+					}
+					if(fd_count-- == 0) break;
+					//need to check so that another epoch of select could excute
+				}
 			}
-		}
-	}			
+		}			
+	}
 }
-
-
 void init(){	
+	FD_ZERO(&readfds);
+	//init fd_set
+	
 	switch(mode){
 	case 's':
 		bzero(&serv_IP, sizeof(serv_IP));
@@ -406,25 +512,28 @@ void init(){
 	case 'c':
 		//same for client except, it only needs to create socket
 		bzero(&cli_IP, sizeof(cli_IP));
-		if((cli_IP[0].sock = socket(AF_INET, SOCK_STREAM, 0))==-1){
-			perror("ERROR! SOCKCREATE-cli :");
-			exit(1);
+		int i;
+		for(i = 0; i <2; i++){
+		//I am making two sockets here and binding both of them.
+			if((cli_IP[i].sock = socket(AF_INET, SOCK_STREAM, 0))==-1){
+				perror("ERROR! SOCKCREATE-cli :");
+				exit(1);
+			}
+			cli_IP[i].sock_info.sin_family = AF_INET;
+			if(i ==0)cli_IP[i].sock_info.sin_port = htons(income_port);
+			else cli_IP[i].sock_info.sin_port = htons(income_port+1);
+			// cli_IP[0] will be uesd to listening port, 
+			// cli_IP[1] will be used to communicate to the server
+			cli_IP[i].sock_info.sin_addr.s_addr = inet_addr(getLOIP());
+	           	if((bind(cli_IP[i].sock, (struct sockaddr*)&cli_IP[i].sock_info, sock_len)) == -1){
+				perror("Cli- BIND ERR:");
+				exit(1);
+			}
 		}
-		cli_IP[0].sock_info.sin_family = AF_INET;
-		cli_IP[0].sock_info.sin_port = htons(income_port);
-		cli_IP[0].sock_info.sin_addr.s_addr = inet_addr(getLOIP());
-		                       cli_con_max++;
-           	if((bind(cli_IP[0].sock, (struct sockaddr*)&cli_IP[0].sock_info, sock_len)) == -1){
-			perror("Cli- BIND ERR:");
-			exit(1);
-		}
-		
 		if(listen(cli_IP[0].sock, BACKLOG) == -1){
 			perror("Client listen");
 			exit(1);
 		}
-		LIST();
-		printf(list);
 		cli_con_max = 1;
 		break;
 	}
