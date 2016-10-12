@@ -22,6 +22,12 @@ char* cli_usage =
 [TERMINATE <connection id>] - terminate the connection listed under the specified number when LIST is used to display all connections\n\n\
 [QUIT] - CLOSE all connections and terminate this process \n\n\
 [SEND <Connection id> <message> - send message to host on the connectoin that is designated by the connection ID,\n[More than 100 characters won't send']\n\n";
+char* serv_usage =  
+"USAGE:\n\n\
+[HELP] - print out this instruction \n\n\
+[DISPLAY] - display information\n[name, UBIT name, UB e-mail, IP address of the process, port this process is listening.\n\n\
+[LIST] - Display numbered list of all the connections this process if part of\n\n\
+[QUIT] - CLOSE all connections and terminate this process \n\n";
 char* display = 
 "Author : ISSAC CHOI \n\
 UBIT : issaccho\n\
@@ -98,7 +104,8 @@ char* getIP(char* hostname){
 	struct hostent *h;
 	if((h = gethostbyname(hostname)) ==NULL){
 		herror("Cannot resolve IP from hostname..");
-		return NULL;
+		sprintf(getip,"NA");
+		return getip;
 	}
 	memcpy(&t_addr.sin_addr, h->h_addr_list[0], h->h_length);
 	inet_ntop(AF_INET, &t_addr.sin_addr, getip, INET_ADDRSTRLEN);
@@ -169,8 +176,10 @@ int runServ(){
 		//renew fd_set
 //		fd_count = select(maxfd+1, &tempfds,NULL,NULL,NULL);
 		//wait until something is coming...
+		fd_count =0;
+		fd_count = select(maxfd+1,&tempfds, NULL,NULL,NULL);
 
-		for(fd_count = select(maxfd+1,&tempfds, NULL,NULL,NULL); fd_count > 0; fd_count--){
+		while(fd_count-- > 0){
 			if(FD_ISSET(serv_IP[0].sock,&tempfds)){
 			//if a client tries to connect to sever
 				int freespot = findEmptySock();
@@ -207,27 +216,22 @@ int runServ(){
 				if(tokens[0] == '\0'){
 					continue;
 				}else if(strcmp(tokens[0], "HELP") ==0 && numTok == 1){
-					printf(cli_usage);
+					printf(serv_usage);
 				}else if(strcmp(tokens[0],"DISPLAY")==0 && numTok == 1){
 					printf(display);
 					printf(" %s \n",getLOIP());
 					printf("Income port : %d", income_port);
-				}else if(strcmp(tokens[0], "CONNECT") ==0 && numTok ==3){
-
 				}else if(strcmp(tokens[0], "LIST") ==0 && numTok ==1){
 					LIST();
 					printf(list);
-				}else if(strcmp(tokens[0], "TERMINATE") ==0 && numTok ==2){
-
 				}else if(strcmp(tokens[0], "QUIT") == 0 && numTok ==1){
 
-				}else if(strcmp(tokens[0], "SEND") == 0 && numTok > 3 && numTok < 40){
-					printf("you cannot send from server\n")	;
 				}else{
-					printf(cli_usage);
+					printf(serv_usage);
 				}
 			}else{
 			//message from other clients
+				fd_count =0;
 			}
 		}
 			//processing keyboard input from server itself..
@@ -251,7 +255,7 @@ int runCli(){
 		fd_count =0;
 		fd_count = select(maxfd+1,&tempfds, NULL,NULL,NULL);
 		while(fd_count > 0){
-			fd_count--;
+		fd_count--;
 		//wait until there is an input and starts to work at coming inputs.
 			if(FD_ISSET(cli_IP[0].sock,&tempfds)){
 			//if other clients connecto this client.	
@@ -309,11 +313,21 @@ int runCli(){
 						//set typed port number
 					
 						if(isValidIP(tokens[1])) cli_IP[1].sock_info.sin_addr.s_addr = inet_addr(tokens[1]);
-						else cli_IP[1].sock_info.sin_addr.s_addr =inet_addr(getIP(tokens[1]));
-						//test if given string is ipforman or hostname.
-						//if it is hostname, resolve it to IP string and set its address,
-						//or just put it
-						if((connect(cli_IP[1].sock,(struct sockaddr*) & cli_IP[1].sock_info, sock_len))==-1) perror("Cannot Register:");
+						//if given domain is in IPaddr form, just put that in addr section
+						else{ 
+						//or if it is hostname
+							if(strcmp((getIP(tokens[1])),"NA")==0){
+								printf("You put wrong hostname..");
+								continue;
+							}
+							//get ip with given host name and if cannot resolve.. print error and continue..
+							else cli_IP[1].sock_info.sin_addr.s_addr =inet_addr(getip);
+							//or assign ipaddress.
+						}
+						if((connect(cli_IP[1].sock,(struct sockaddr*) & cli_IP[1].sock_info, sock_len))==-1){
+							perror("Cannot Register, Check the domain or port");
+							continue;
+						}
 						//connect to the server
 						
 						send(cli_IP[1].sock,"R",sizeof("R"),0);
@@ -334,7 +348,7 @@ int runCli(){
 						}else{
 							close(cli_IP[1].sock);
 							cli_IP[1].sock = 0;
-							printf("you are not connecting to the server..");
+							printf("you are not connecting to the server..\n");
 						}
 					}else{
 					}
@@ -353,6 +367,7 @@ int runCli(){
 					printf(cli_usage);
 				}
 			}else{
+				fd_count =0;
 			//message from other clients
 			}
 		}
