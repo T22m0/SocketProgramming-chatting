@@ -174,16 +174,15 @@ int runServ(){
 			if(FD_ISSET(serv_IP[0].sock,&tempfds)){
 			//if a client tries to connect to sever
 				int freespot = findEmptySock();
-				printf("%d\n\n",freespot);
 				//find empty position on server list
 				//enable reusing spots in where client quitted.
 				if((serv_IP[freespot].sock = accept(serv_IP[0].sock,(struct sockaddr*) &serv_IP[freespot].sock_info, &sock_len))==-1) perror("CANNOT ACCEPT: ");
 				//accept client and all information about client is saved in serv_IP
-				char action[10];
-				int terminator = recv(serv_IP[freespot].sock, action, 10, 0);
+				char action[3];
+				int terminator = recv(serv_IP[freespot].sock, action, 3, 0);
 				action[terminator]='\0';
 				//if a client tries to connect..
-				if(strcmp(action,"REGISTER")!=0){
+				if(strcmp(action,"R")==0){
 					send(serv_IP[freespot].sock, "s", strlen("s"),0);
 					//send client if I am the server!
 					if(serv_IP[freespot].sock > maxfd) maxfd = serv_IP[freespot].sock;
@@ -198,6 +197,7 @@ int runServ(){
 				}else{
 					close(serv_IP[freespot].sock);
 					serv_IP[freespot].sock =0;
+					continue;
 				}
 			}else if(FD_ISSET(0,&tempfds)){
 			//if it is from keyboard,
@@ -248,7 +248,10 @@ int runCli(){
 		//init number of TOken and print out the shell
 		tempfds = readfds;
 		//renew the fdset
-		for(fd_count = select(maxfd+1,&tempfds, NULL,NULL,NULL); fd_count > 0; fd_count--){
+		fd_count =0;
+		fd_count = select(maxfd+1,&tempfds, NULL,NULL,NULL);
+		while(fd_count > 0){
+			fd_count--;
 		//wait until there is an input and starts to work at coming inputs.
 			if(FD_ISSET(cli_IP[0].sock,&tempfds)){
 			//if other clients connecto this client.	
@@ -262,7 +265,7 @@ int runCli(){
 					int terminator = recv(cli_IP[freespot].sock, action, strlen(action), 0);
 					action[terminator]='\0';
 					//if a client tries to connect..
-					if(action=="R"){
+					if(strcmp(action,"R")==0){
 						send(cli_IP[freespot].sock, "c",sizeof("c"),0);
 						close(cli_IP[freespot].sock);
 						cli_IP[freespot].sock =0;
@@ -353,7 +356,6 @@ int runCli(){
 			//message from other clients
 			}
 		}
-			//processing keyboard input from server itself..
 	}			
 }
 
