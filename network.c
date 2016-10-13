@@ -92,19 +92,22 @@ int findEmptySock(){
 } 
 //Return first index of serv_IP that has sock value of 0
 
-int findMaxFd(int cur_sock){
+int findMaxFd(int cur_sock,int maxfd){
 	int i;
-	int maxfd=0;
-	if(mode == 's'){
-		for(i = 0; i < MAX_CONNECT; i++){
-			if(serv_IP[i].sock > maxfd && maxfd < cur_sock) maxfd = serv_IP[i].sock;
+	if(cur_sock < maxfd) return maxfd;
+	else if(cur_sock == maxfd){
+		int temp =0;
+		if(mode == 's'){
+			for(i = 0; i < MAX_CONNECT; i++){
+				if(serv_IP[i].sock > temp && temp < cur_sock) temp = serv_IP[i].sock;
+			}
+		}else{
+			for(i = 0; i< MAX_CLI_CONNECT; i++){
+				if(cli_IP[i].sock > temp && temp < cur_sock) temp = cli_IP[i].sock;
+			}
 		}
-	}else{
-		for(i = 0; i< MAX_CLI_CONNECT; i++){
-			if(cli_IP[i].sock > maxfd && maxfd < cur_sock) maxfd = cli_IP[i].sock;
-		}
+		return temp;
 	}
-	return maxfd;
 }
 // When client quit, it needs to check if quitting client has max socket number.
 // if it holds, switch to second highest socket number.
@@ -114,7 +117,7 @@ char* getHost(struct sockaddr_in addr){
 	getnameinfo((struct sockaddr*)&t_addr, sock_len, gethost, sizeof(gethost),NULL,0,0);
 	return gethost;
 }
-
+//get host name based on ipaddress..
 char* getIP(char* hostname){
 	struct hostent *h;
 	if((h = gethostbyname(hostname)) ==NULL){
@@ -148,9 +151,6 @@ char* getLOIP() {
 	//and resolve network address to string IP format
 	return getip;
 }
-int scan_closed(){
-	return 0;
-}
 //get public ip using UDP connection 
 void LIST(){
 	sprintf(list, "id:	Hostnamed				IP		port\n");
@@ -158,16 +158,19 @@ void LIST(){
 	int count;
 	if(mode == 's'){
 		for(count=0; count < MAX_CONNECT; count++){
-			if(serv_IP[count].sock != 0){
+			if(serv_IP[count].sock != 0 && count == 0){
 				sprintf(list+strlen(list),"%d:	%s		%s	%d\n"\
-				,count, getHost(serv_IP[count].sock_info),inet_ntoa(serv_IP[count].sock_info.sin_addr), ntohs(serv_IP[count].sock_info.sin_port)-1);
+				,count+1, getHost(serv_IP[count].sock_info),inet_ntoa(serv_IP[count].sock_info.sin_addr), ntohs(serv_IP[count].sock_info.sin_port));
+			}else if(serv_IP[count].sock != 0){
+				sprintf(list+strlen(list),"%d:	%s		%s	%d\n"\
+				,count+1, getHost(serv_IP[count].sock_info),inet_ntoa(serv_IP[count].sock_info.sin_addr), ntohs(serv_IP[count].sock_info.sin_port)-1);
 			}
 		}
 	}else{
 		for(count=0; count < MAX_CLI_CONNECT; count++){
 			if(cli_IP[count].sock != 0){
 				sprintf(list+strlen(list),"%d:	%s		%s	%d\n"\
-				,count, getHost(cli_IP[count].sock_info),inet_ntoa(cli_IP[count].sock_info.sin_addr), ntohs(cli_IP[count].sock_info.sin_port));
+				,count+1, getHost(cli_IP[count].sock_info),inet_ntoa(cli_IP[count].sock_info.sin_addr), ntohs(cli_IP[count].sock_info.sin_port));
 			}
 		}
 	}
@@ -184,6 +187,20 @@ void broadcast_msg(char* msg){
 		}
 	}	
 }
+//used by server. broadcast message to all existing client
+
+int close_all(){
+	int i;
+	if(mode =='s'){
+		for(i = 1; i < MAX_CONNECT; i++) if(serv_IP[i].sock !=0) close(serv_IP[i].sock);
+		return 1;
+	}else if(mode =='c'){
+		for(i = 1; i < MAX_CLI_CONNECT; i++) if(cli_IP[i].sock!=0) close(cli_IP[i].sock);
+		return 1;
+	}
+		return -1;
+}
+//used for closing all the existing connection.
 int runServ(){
 	int maxfd = serv_IP[0].sock;
 	//set current range of selection is socket# of server
@@ -203,6 +220,7 @@ int runServ(){
 
 			if(FD_ISSET(serv_IP[0].sock,&tempfds)){
 			//if a client tries to connect to sever
+			   if(num_connection < MAX_CONNECT){
 				int freespot = findEmptySock();
 				//find empty position on server list
 				//enable reusing spots in where client quitted.
@@ -224,12 +242,16 @@ int runServ(){
 					//broadcast all client!
 					num_connection++;
 				}else{
-				//what..? not registering.. someone's hacking..
+				//what..? not 'R' for registering..? someone's hacking..
 					close(serv_IP[freespot].sock);
 					serv_IP[freespot].sock =0;
 					//close the connection and wipeout the socket number
 					continue;
 				}
+			   }else{
+				printf("User OverFlow.. Ignoring all incoming!");
+				continue;
+			   }
 			}else if(FD_ISSET(0,&tempfds)){
 			//if it is from keyboard,
 				command = readLine();
@@ -250,7 +272,9 @@ int runServ(){
 					LIST();
 				//LIST current connection
 				}else if(strcmp(tokens[0], "QUIT") == 0 && numTok ==1){
-
+					broadcast_msg("THE server is going off...\n");
+					if(close_all()) printf("CLOSED ALL CONNECTION\n");
+					exit(1);						
 				}else{
 					printf(serv_usage);
 				}
@@ -266,7 +290,7 @@ int runServ(){
 						if(terminator ==0){
 						//but if figured out the client is left for nothing..
 							printf("CLIENT LEFT!!\n");
-							maxfd =	findMaxFd(serv_IP[t].sock);
+							maxfd =	findMaxFd(serv_IP[t].sock,maxfd);
 							//find next highest socket and assign to maxfd							
 							close(serv_IP[t].sock);
 							//finish the socket
@@ -285,7 +309,25 @@ int runServ(){
 							tokens = parseTok(r_command);
 							//parse token.
 							if(strcmp(tokens[0], "LIST")==0 && numTok ==1){
-								send(serv_IP[t].sock, list, MAX_LIST,0);
+								send(serv_IP[t].sock,list,MAX_LIST,0);
+								//send(serv_IP[t].sock, list, MAX_LIST,0);
+							}else if(strcmp(tokens[0], "CONNECT")==0){
+
+							}else if(strcmp(tokens[0], "QUIT") == 0 && numTok ==1){					
+								send(serv_IP[t].sock,"Q",strlen("0"),0);
+								//you are approved to leave my list!
+								maxfd = findMaxFd(serv_IP[t].sock,maxfd);
+								//find next highest maxfd
+								close(serv_IP[t].sock);
+								//close with the client
+								FD_CLR(serv_IP[t].sock,&readfds);
+								//unmark it
+								serv_IP[t].sock =0;
+								//init socket
+								LIST();
+								broadcast_msg(list);
+								//update list and broadcast it
+								num_connection--;
 							}
 						}
 					}
@@ -308,8 +350,7 @@ int runCli(){
 		fprintf(stderr,"PA1> ");
 		//init number of TOken and print out the shell
 		tempfds = readfds;
-		//renew the fdset
-		
+		//renew the fdset	
 		fd_count = select(maxfd+1,&tempfds, NULL,NULL,NULL);
 		while(fd_count-- > 0){
 		//wait until there is an input and starts to work at coming inputs.
@@ -326,9 +367,13 @@ int runCli(){
 					action[terminator]='\0';
 					//if a client tries to connect..
 					if(strcmp(action,"R")==0){
+					//if received token if "R", then it is from client who is connecting
 						send(cli_IP[freespot].sock, "c",sizeof("c"),0);
+						//I am the client
 						close(cli_IP[freespot].sock);
+						//I am shutting your connection
 						cli_IP[freespot].sock =0;
+						//go away
 						continue;
 					}else{
 						if(cli_IP[freespot].sock > maxfd) maxfd = cli_IP[freespot].sock;
@@ -405,13 +450,13 @@ int runCli(){
 					continue;
 				   }
 				}else if(strcmp(tokens[0], "CONNECT") ==0 && numTok ==3){
-					if(REGISTERED){
+					if(REGISTERED==TRUE){
 					}else{
 						printf("YOU SHOULD REGISTER YOURSELF TO SERVER BEFORE CONNECT..\n");
 						continue;
 					}
 				}else if(strcmp(tokens[0], "LIST") ==0 && numTok ==1){
-					if(REGISTERED){
+					if(REGISTERED==TRUE){
 						printf("__________CONNECTED CLIENT IP LIST_______\n");
 						LIST();
 						printf("__________SERVER CLIENT IP LIST__________\n");
@@ -426,7 +471,19 @@ int runCli(){
 				}else if(strcmp(tokens[0], "TERMINATE") ==0 && numTok ==2){
 					
 				}else if(strcmp(tokens[0], "QUIT") == 0 && numTok ==1){
-
+					if(REGISTERED==TRUE){
+						send(cli_IP[1].sock,"QUIT", strlen("QUIT"), 0);
+						int terminator = recv(cli_IP[1].sock, message, MAX_MSG,0);
+						if(terminator) message[terminator] = '\0';
+						if(strcmp(message, "Q") == 0){
+							close_all();
+							printf("Thanks For using ISSAC's Chatting Prog\n");
+							exit(1);
+						}
+					}else{
+						printf("GOOD BYE!\n");
+						exit(1);
+					}
 				}else if(strcmp(tokens[0], "SEND") == 0 && numTok > 3 && numTok < 40){
 				
 				}else{
@@ -448,7 +505,27 @@ int runCli(){
 								printf(list);
 							}else{
 							//server is gone.. so as other client..
-								//do close every socket.. update every thing 귀찮..지금은..
+								printf("\nServer is gone..!!\nLOST ALL CONNECTION..\n");
+								// begin initializing..
+								maxfd = cli_IP[0].sock;
+								//return to initial maxfd
+								if(close_all()) printf("CLOSE all Connection\n");
+								//destroy all socket except listening one..
+								if((cli_IP[1].sock = socket(AF_INET, SOCK_STREAM, 0))==-1){
+									perror("SERVER DISASTER\n");
+									exit(1);
+								}			
+								//Restore the socket for the server..
+								int i;
+								for(i =2; i<MAX_CLI_CONNECT; i++){
+									if(cli_IP[i].sock != 0){
+										 FD_CLR(cli_IP[i].sock,&readfds);
+										 cli_IP[i].sock = 0; 
+									}
+								//no need to FD_CLR on cli_IP[1].sock.
+								//Cleaning up all client setup
+								}REGISTERED = FALSE;
+								fd_count =0;
 							}	
 						}else{
 						//message from other clients
@@ -457,7 +534,7 @@ int runCli(){
 								printf(message);
 							}else{
 								printf("CLIENT LEFT!!\n");
-								maxfd =	findMaxFd(cli_IP[t].sock);
+								maxfd =	findMaxFd(cli_IP[t].sock,maxfd);
 								//find next highest socket and assign to maxfd							
 								close(cli_IP[t].sock);
 								//finish the socket
