@@ -225,8 +225,8 @@ int runServ(){
 				//accept client and all information about client is saved in serv_IP
 				char action[3];
 				int terminator = recv(serv_IP[freespot].sock, action, 3, 0);
-				action[terminator]='\0';
 				//if a client tries to connect..
+				printf("The message if %s,\n",action);
 				if(strcmp(action,"R")==0){
 					send(serv_IP[freespot].sock, "s", strlen("s"),0);
 					//send client if I am the server!
@@ -312,8 +312,10 @@ int runServ(){
 								int ip,i,p;
 								//ip if it is form of IP form, i for index, p for temp port
 								char* str;
+								//saving source IP to compare if it is trying to connect to itself
 								//for saving temp ip address
 								if(!(ip=isValidIP(tokens[1]))) getIP(tokens[1]);
+								//if given domain is host name.. excute getIP
 								for(i =1; i< MAX_CONNECT; i++){
 								   if(serv_IP[i].sock!=0){
 								      str = inet_ntoa(serv_IP[i].sock_info.sin_addr);
@@ -388,12 +390,11 @@ int runCli(){
 					int freespot = findEmptySock();
 					//search for the empty socket
 					if((cli_IP[freespot].sock = accept(cli_IP[0].sock,(struct sockaddr*) &cli_IP[freespot].sock_info, &sock_len))==-1) perror("CANNOT ACCEPT: ");		
+					//and accept it with listening socket, and save info of the connecting peer
 					char action[3];
-					int terminator = recv(cli_IP[freespot].sock, action, strlen(action), 0);
+					int terminator = recv(cli_IP[freespot].sock, action, 3, 0);
 					action[terminator]='\0';
 					//if a client tries to connect..
-					printf("%s IS THE MESSAGE\n",action);
-					//and accept it with listening socket, and save info of the connecting peer
 					if(strcmp(action,"R")==0){
 					//if received token if "R", then it is from client who is connecting
 						send(cli_IP[freespot].sock, "c",sizeof("c"),0);
@@ -467,7 +468,7 @@ int runCli(){
 					send(cli_IP[1].sock,"R",sizeof("R"),0);
 					//let them know that i am trying to register..
 					char ans[3];
-					int terminator = recv(cli_IP[1].sock, ans, strlen(ans),0);
+					int terminator = recv(cli_IP[1].sock, ans, 3,0);
 					ans[terminator] = '\0';
 					//receive from server that it is really the server
 					if(strcmp(ans,"s")==0){	
@@ -487,7 +488,16 @@ int runCli(){
 				   }
 				}else if(strcmp(tokens[0], "CONNECT") ==0 && numTok ==3){
 					if(REGISTERED==TRUE){
-					//if registered
+					//if registeredi
+						char* target;
+						if(!isValidIP(tokens[1])) target = getIP(tokens[1]);
+						else strcpy(target, tokens[1]);
+						//translate give input to IP string
+						if(strcmp(target, inet_ntoa(cli_IP[0].sock_info.sin_addr))==0){
+						//compare given domain and source's IP, if it matches..
+							printf("YOU CANNOT CONNECT TO YOURSELF...\n");
+							continue;
+						}
 						if(cli_con_max <= MAX_CLI_CONNECT){
 						//check if I have not reached max connection...
 							sprintf(r_command,"%s %s %s",tokens[0],tokens[1],tokens[2]);
@@ -496,7 +506,6 @@ int runCli(){
 							//if not ask server to verify the address
 							int terminator = recv(cli_IP[1].sock,message,MAX_MSG,0);
 							message[terminator]='\0';
-							printf("GOT MESSAGE FROM SRVER : %s\n",message);
 							//receive from server
 							if(strcmp(message,"Y")==0){
 							//if it is in server and server says YES!
@@ -520,10 +529,9 @@ int runCli(){
 									continue;
 								}else{
 								//if can connect
-									send(cli_IP[freespot].sock, "C",strlen("C"),0);
+									send(cli_IP[freespot].sock,"C" ,sizeof("C"),0);
 									terminator = recv(cli_IP[freespot].sock, message,MAX_MSG,0);
 									message[terminator]='\0';
-									printf("GOT MEESSAGE FROM CLIENT : %s\n",message);
 									//receive message from the client if it also accepts
 									if(strcmp(message,"Y")==0){
 									//if yes
@@ -532,6 +540,7 @@ int runCli(){
 										if(maxfd < cli_IP[freespot].sock) maxfd = cli_IP[freespot].sock;
 										cli_con_max++;
 										//update info
+										printf("CONNECT SUCCESSFUL\n");
 									}else if(strcmp(message,"N")){
 									//if No
 										close(cli_IP[freespot].sock);
@@ -586,7 +595,7 @@ int runCli(){
 						printf("GOOD BYE!\n");
 						exit(1);
 					}
-				}else if(strcmp(tokens[0], "SEND") == 0 && numTok > 3){
+				}else if(strcmp(tokens[0], "SEND") == 0 && numTok >= 3){
 					if(REGISTERED==TRUE){
 						int i;
 						message[0]='\0';
@@ -600,7 +609,10 @@ int runCli(){
 							}
 						}
 						int index = atoi(tokens[1])-1;
-						send(cli_IP[index].sock,message, strlen(message),0);
+						if(cli_IP[index].sock != 0){
+							send(cli_IP[index].sock, message, strlen(message),0);
+							printf("Message Sent to ID:<%d> \n",index+1);
+						}else printf("You are trying to send to empty socket..\n");
 					}else{
 						printf("YOu SHOULD REGISTER and CONNECT first \n");
 						continue;
@@ -613,12 +625,13 @@ int runCli(){
 				int t;
 				for(t =1; t<MAX_CLI_CONNECT; t++){
 				//from first client index of cli_IP
-					if(FD_ISSET(cli_IP[t].sock,&tempfds)){			
+					if(FD_ISSET(cli_IP[t].sock,&tempfds)){		
 					//if the socket is triggered..
 						int terminator;
 						if(t == 1){
 						//message from the server
-							if((terminator = recv(cli_IP[t].sock, list, MAX_LIST, 0)) != 0){
+							terminator = recv(cli_IP[t].sock, list, MAX_LIST, 0);
+							if(terminator != 0){
 							//if client can read from server,
 								list[terminator]='\0';
 								printf(list);
@@ -656,12 +669,16 @@ int runCli(){
 								fd_count =0;
 								cli_con_max = 1;		
 							}	
-						}else{
+						}else if(t > 1){
 						//message from other clients
-							int terminator = recv(cli_IP[t].sock, message, MAX_MSG, 0);
+							terminator = recv(cli_IP[t].sock, message, MAX_MSG, 0);
 							if(terminator != 0){
 								message[terminator]='\0';
-								printf(message);
+								char* IP = getHost(cli_IP[t].sock_info);
+								printf("\nMessage received from %s\n",IP);
+								printf("Sender's IP:%s\n",getIP(IP));
+								printf("Sender's Port:%d\n",ntohs(cli_IP[t].sock_info.sin_port));
+								printf("Message:%s\n",message);
 							}else{
 								printf("CLIENT LEFT!!\n");
 								maxfd =	findMaxFd(cli_IP[t].sock,maxfd);
@@ -676,10 +693,8 @@ int runCli(){
 								//update list and
 								cli_con_max--;
 							}
-						}
+						}if(fd_count-- ==0) break;
 					}
-					if(fd_count-- == 0) break;
-					//need to check so that another epoch of select could excute
 				}
 			}
 		}			
