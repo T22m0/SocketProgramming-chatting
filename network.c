@@ -67,9 +67,9 @@ char list[MAX_LIST];
 //for LIST method();
 char message[MAX_MSG];
 //for sending and receiving message
-
 char *command;
 char **tokens;
+//for interpretate user inputs
 //_________________________________________________//
 int isValidIP(char *ip){
 	struct sockaddr_in t;
@@ -77,7 +77,6 @@ int isValidIP(char *ip){
 	return result != 0;
 }
 //to determine if given string is IPaddress
-
 int findEmptySock(){
 	int i;
 	if(mode == 's'){
@@ -91,7 +90,6 @@ int findEmptySock(){
 	}
 } 
 //Return first index of serv_IP that has sock value of 0
-
 int findMaxFd(int cur_sock,int maxfd){
 	int i;
 	if(cur_sock < maxfd) return maxfd;
@@ -111,7 +109,6 @@ int findMaxFd(int cur_sock,int maxfd){
 }
 // When client quit, it needs to check if quitting client has max socket number.
 // if it holds, switch to second highest socket number.
-
 char* getHost(struct sockaddr_in addr){
 	t_addr = addr;
 	getnameinfo((struct sockaddr*)&t_addr, sock_len, gethost, sizeof(gethost),NULL,0,0);
@@ -311,8 +308,38 @@ int runServ(){
 							if(strcmp(tokens[0], "LIST")==0 && numTok ==1){
 								send(serv_IP[t].sock,list,MAX_LIST,0);
 								//send(serv_IP[t].sock, list, MAX_LIST,0);
-							}else if(strcmp(tokens[0], "CONNECT")==0){
-								
+							}else if(strcmp(tokens[0], "CONNECT")==0 && numTok ==3){
+								int ip,i,p;
+								//ip if it is form of IP form, i for index, p for temp port
+								char* str;
+								//for saving temp ip address
+								if(!(ip=isValidIP(tokens[1]))) getIP(tokens[1]);
+								for(i =1; i< MAX_CONNECT; i++){
+								   if(serv_IP[i].sock!=0){
+								      str = inet_ntoa(serv_IP[i].sock_info.sin_addr);
+								      p = ntohs(serv_IP[i].sock_info.sin_port);
+								      //parse information from the server IP addr, and port
+									if(ip){
+									//if it is ipForm, compare with tokens[1] else, getip
+									   if(strcmp(inet_ntoa(serv_IP[i].sock_info.sin_addr),tokens[1]) ==0 &&\
+									     (ntohs(serv_IP[i].sock_info.sin_port)-1==atoi(tokens[2]))){
+									     //if IP matches, and port number matches
+									     //*note that listening port is 1 less than port to server
+										send(serv_IP[t].sock,"Y",strlen("Y"),0);
+									        //send YES there is!
+										break;
+									   }  
+									}else{
+									    if(strcmp(inet_ntoa(serv_IP[i].sock_info.sin_addr),getip) ==0 &&\
+									      (ntohs(serv_IP[i].sock_info.sin_port)-1==atoi(tokens[2]))){
+										send(serv_IP[t].sock,"Y",strlen("Y"),0);
+									        //send YES there is!
+										break;
+									    }
+									}
+								   }
+								}if(i==MAX_CONNECT) send(serv_IP[t].sock, "N",strlen("N"),0);
+														
 							}else if(strcmp(tokens[0], "QUIT") == 0 && numTok ==1){					
 								send(serv_IP[t].sock,"Q",strlen("0"),0);
 								//you are approved to leave my list!
@@ -360,12 +387,13 @@ int runCli(){
 				//if client does not have its max connections with other peer,
 					int freespot = findEmptySock();
 					//search for the empty socket
-					if((cli_IP[freespot].sock = accept(cli_IP[0].sock,(struct sockaddr*) &cli_IP[freespot].sock_info, &sock_len))==-1) perror("CANNOT ACCEPT: ");
-					//and accept it with listening socket, and save info of the connecting peer
+					if((cli_IP[freespot].sock = accept(cli_IP[0].sock,(struct sockaddr*) &cli_IP[freespot].sock_info, &sock_len))==-1) perror("CANNOT ACCEPT: ");		
 					char action[3];
 					int terminator = recv(cli_IP[freespot].sock, action, strlen(action), 0);
 					action[terminator]='\0';
 					//if a client tries to connect..
+
+					//and accept it with listening socket, and save info of the connecting peer
 					if(strcmp(action,"R")==0){
 					//if received token if "R", then it is from client who is connecting
 						send(cli_IP[freespot].sock, "c",sizeof("c"),0);
@@ -462,19 +490,24 @@ int runCli(){
 					//if registered
 						if(cli_con_max <= MAX_CLI_CONNECT){
 						//check if I have not reached max connection...
-							send(cli_IP[1].sock,command,strlen(command),0);
+							sprintf(r_command,"%s %s %s",tokens[0],tokens[1],tokens[2]);
+							//restore original command to send to server							
+							send(cli_IP[1].sock,r_command,strlen(r_command),0);
 							//if not ask server to verify the address
 							int terminator = recv(cli_IP[1].sock,message,MAX_MSG,0);
 							message[terminator]='\0';
+							printf("GOT MESSAGE FROM SRVER : %s\n",message);
 							//receive from server
 							if(strcmp(message,"Y")==0){
-							//if it is in server
+							//if it is in server and server says YES!
 								int freespot = findEmptySock();
 								//find free spot
+								printf("POINT	1\n");
 								if((cli_IP[freespot].sock=socket(AF_INET, SOCK_STREAM,0))==-1){
 									perror("Connect socket ERR:");
 									continue;
 								}	
+								printf("POINT	2\n");
 								//create sockets in free spot
 								cli_IP[freespot].sock_info.sin_family = AF_INET; 
 								cli_IP[freespot].sock_info.sin_port = htons(atoi(tokens[2]));
@@ -483,15 +516,31 @@ int runCli(){
 									getIP(tokens[1]);
 									cli_IP[freespot].sock_info.sin_addr.s_addr = inet_addr(getip);
 								}
+								printf("POINT	3\n");
 								if((connect(cli_IP[freespot].sock,(struct sockaddr*) & cli_IP[freespot].sock_info, sock_len))==-1){
 								//try to connect to peer on given info
 									perror("Cannot Connnect");
 									continue;
 								}else{
-									LIST();
-									FD_SET(cli_IP[freespot].sock,&readfds);
-									if(maxfd < cli_IP[freespot].sock) maxfd = cli_IP[freespot].sock;
-									cli_con_max++;
+								//if can connect
+									send(cli_IP[freespot].sock, "C",strlen("C"),0);
+									terminator = recv(cli_IP[freespot].sock, message,MAX_MSG,0);
+									message[terminator]='\0';
+									//receive message from the client if it also accepts
+									if(strcmp(message,"Y")==0){
+									//if yes
+										LIST();
+										FD_SET(cli_IP[freespot].sock,&readfds);
+										if(maxfd < cli_IP[freespot].sock) maxfd = cli_IP[freespot].sock;
+										cli_con_max++;
+										//update info
+									}else if(strcmp(message,"N")){
+									//if No
+										close(cli_IP[freespot].sock);
+										cli_IP[freespot].sock =0;
+										//close the connection
+										printf("The other client reached max connection\n");	
+									}
 								}
 							}else if(strcmp(message,"N")==0){
 								if(strcmp(tokens[1],"127.0.0.1")==0){
