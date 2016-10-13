@@ -37,7 +37,7 @@ char **parseTok(char* input){
 		numTok++;
 		/*increse numTok by 1*/	
 		if(numTok>=40){
-			printf("Please use less than %d space when typing", 40);
+			printf("Please use less than 40 space total when typing" );
 			return NULL;
 		}
 	}

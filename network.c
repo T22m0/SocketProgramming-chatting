@@ -392,7 +392,7 @@ int runCli(){
 					int terminator = recv(cli_IP[freespot].sock, action, strlen(action), 0);
 					action[terminator]='\0';
 					//if a client tries to connect..
-
+					printf("%s IS THE MESSAGE\n",action);
 					//and accept it with listening socket, and save info of the connecting peer
 					if(strcmp(action,"R")==0){
 					//if received token if "R", then it is from client who is connecting
@@ -470,7 +470,7 @@ int runCli(){
 					int terminator = recv(cli_IP[1].sock, ans, strlen(ans),0);
 					ans[terminator] = '\0';
 					//receive from server that it is really the server
-					if(ans[0]=='s'){	
+					if(strcmp(ans,"s")==0){	
 						//if server everything is good!
 						FD_SET(cli_IP[1].sock,&readfds);
 						maxfd = cli_IP[0].sock > cli_IP[1].sock ? cli_IP[0].sock : cli_IP[1].sock;
@@ -502,12 +502,10 @@ int runCli(){
 							//if it is in server and server says YES!
 								int freespot = findEmptySock();
 								//find free spot
-								printf("POINT	1\n");
 								if((cli_IP[freespot].sock=socket(AF_INET, SOCK_STREAM,0))==-1){
 									perror("Connect socket ERR:");
 									continue;
 								}	
-								printf("POINT	2\n");
 								//create sockets in free spot
 								cli_IP[freespot].sock_info.sin_family = AF_INET; 
 								cli_IP[freespot].sock_info.sin_port = htons(atoi(tokens[2]));
@@ -516,7 +514,6 @@ int runCli(){
 									getIP(tokens[1]);
 									cli_IP[freespot].sock_info.sin_addr.s_addr = inet_addr(getip);
 								}
-								printf("POINT	3\n");
 								if((connect(cli_IP[freespot].sock,(struct sockaddr*) & cli_IP[freespot].sock_info, sock_len))==-1){
 								//try to connect to peer on given info
 									perror("Cannot Connnect");
@@ -526,6 +523,7 @@ int runCli(){
 									send(cli_IP[freespot].sock, "C",strlen("C"),0);
 									terminator = recv(cli_IP[freespot].sock, message,MAX_MSG,0);
 									message[terminator]='\0';
+									printf("GOT MEESSAGE FROM CLIENT : %s\n",message);
 									//receive message from the client if it also accepts
 									if(strcmp(message,"Y")==0){
 									//if yes
@@ -588,8 +586,25 @@ int runCli(){
 						printf("GOOD BYE!\n");
 						exit(1);
 					}
-				}else if(strcmp(tokens[0], "SEND") == 0 && numTok > 3 && numTok < 40){
-				
+				}else if(strcmp(tokens[0], "SEND") == 0 && numTok > 3){
+					if(REGISTERED==TRUE){
+						int i;
+						message[0]='\0';
+						//init message
+						for(i =2; i<numTok; i++){
+							if(strlen(message)+strlen(tokens[i]) < MAX_MSG){
+								sprintf(message+strlen(message),"%s ",tokens[i]);
+							}else{
+								printf("length of message is limited to 100 characters including space!\n");
+								continue;
+							}
+						}
+						int index = atoi(tokens[1])-1;
+						send(cli_IP[index].sock,message, strlen(message),0);
+					}else{
+						printf("YOu SHOULD REGISTER and CONNECT first \n");
+						continue;
+					}		
 				}else{
 					printf(cli_usage);
 				}
@@ -618,7 +633,16 @@ int runCli(){
 								if((cli_IP[1].sock = socket(AF_INET, SOCK_STREAM, 0))==-1){
 									perror("SERVER DISASTER\n");
 									exit(1);
-								}			
+								}
+								cli_IP[1].sock_info.sin_family = AF_INET;
+								cli_IP[1].sock_info.sin_port = htons(income_port+1);
+								// cli_IP[0] will be uesd to listening port, 
+								// cli_IP[1] will be used to communicate to the server
+								cli_IP[1].sock_info.sin_addr.s_addr = inet_addr(getLOIP());
+						           	if((bind(cli_IP[1].sock, (struct sockaddr*)&cli_IP[1].sock_info, sock_len)) == -1){
+									perror("Cli- RE-BIND ERR:");
+									exit(1);
+								}		
 								//Restore the socket for the server..
 								int i;
 								for(i =2; i<MAX_CLI_CONNECT; i++){
@@ -634,7 +658,8 @@ int runCli(){
 							}	
 						}else{
 						//message from other clients
-							if((terminator = recv(cli_IP[t].sock, message, MAX_MSG, 0)) != 0){
+							int terminator = recv(cli_IP[t].sock, message, MAX_MSG, 0);
+							if(terminator != 0){
 								message[terminator]='\0';
 								printf(message);
 							}else{
