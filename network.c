@@ -220,7 +220,7 @@ int runServ(){
 
 			if(FD_ISSET(serv_IP[0].sock,&tempfds)){
 			//if a client tries to connect to sever
-			   if(num_connection < MAX_CONNECT){
+			   if(num_connection <= MAX_CONNECT){
 				int freespot = findEmptySock();
 				//find empty position on server list
 				//enable reusing spots in where client quitted.
@@ -312,7 +312,7 @@ int runServ(){
 								send(serv_IP[t].sock,list,MAX_LIST,0);
 								//send(serv_IP[t].sock, list, MAX_LIST,0);
 							}else if(strcmp(tokens[0], "CONNECT")==0){
-
+								
 							}else if(strcmp(tokens[0], "QUIT") == 0 && numTok ==1){					
 								send(serv_IP[t].sock,"Q",strlen("0"),0);
 								//you are approved to leave my list!
@@ -356,7 +356,7 @@ int runCli(){
 		//wait until there is an input and starts to work at coming inputs.
 			if(FD_ISSET(cli_IP[0].sock,&tempfds)){
 			//if other clients connecto this client.	
-				if(cli_con_max < MAX_CLI_CONNECT){
+				if(cli_con_max <= MAX_CLI_CONNECT){
 				//if client does not have its max connections with other peer,
 					int freespot = findEmptySock();
 					//search for the empty socket
@@ -375,7 +375,9 @@ int runCli(){
 						cli_IP[freespot].sock =0;
 						//go away
 						continue;
-					}else{
+					}else if(strcmp(action,"C")==0){
+					//it is COnnecting..
+						send(cli_IP[freespot].sock,"Y",strlen("Y"),0);
 						if(cli_IP[freespot].sock > maxfd) maxfd = cli_IP[freespot].sock;
 						//if socketnubmer of newly connected socket is larger than original maxfd, update its value.
 						FD_SET(cli_IP[freespot].sock,&readfds);
@@ -388,7 +390,13 @@ int runCli(){
 						//increase number of connection by 1
 					}
 				}else{
-					printf("IP list is full..Ignore all incoming\n");
+					printf("IP list is full..say NO! to all incoming\n");
+					int temp = accept(cli_IP[0].sock, (struct sockaddr*) &t_addr, &sock_len);
+					//temporary accept its call
+					send(temp, "N",strlen("N"),0);
+					//then... NO!
+					close(temp);
+					//I am leaving, not a word to talk to
 					continue;
 				}
 			}else if(FD_ISSET(0,&tempfds)){
@@ -451,6 +459,50 @@ int runCli(){
 				   }
 				}else if(strcmp(tokens[0], "CONNECT") ==0 && numTok ==3){
 					if(REGISTERED==TRUE){
+					//if registered
+						if(cli_con_max <= MAX_CLI_CONNECT){
+						//check if I have not reached max connection...
+							send(cli_IP[1].sock,command,strlen(command),0);
+							//if not ask server to verify the address
+							int terminator = recv(cli_IP[1].sock,message,MAX_MSG,0);
+							message[terminator]='\0';
+							//receive from server
+							if(strcmp(message,"Y")==0){
+							//if it is in server
+								int freespot = findEmptySock();
+								//find free spot
+								if((cli_IP[freespot].sock=socket(AF_INET, SOCK_STREAM,0))==-1){
+									perror("Connect socket ERR:");
+									continue;
+								}	
+								//create sockets in free spot
+								cli_IP[freespot].sock_info.sin_family = AF_INET; 
+								cli_IP[freespot].sock_info.sin_port = htons(atoi(tokens[2]));
+								if(isValidIP(tokens[1])) cli_IP[freespot].sock_info.sin_addr.s_addr = inet_addr(tokens[1]);
+								else{	
+									getIP(tokens[1]);
+									cli_IP[freespot].sock_info.sin_addr.s_addr = inet_addr(getip);
+								}
+								if((connect(cli_IP[freespot].sock,(struct sockaddr*) & cli_IP[freespot].sock_info, sock_len))==-1){
+								//try to connect to peer on given info
+									perror("Cannot Connnect");
+									continue;
+								}else{
+									LIST();
+									FD_SET(cli_IP[freespot].sock,&readfds);
+									if(maxfd < cli_IP[freespot].sock) maxfd = cli_IP[freespot].sock;
+									cli_con_max++;
+								}
+							}else if(strcmp(message,"N")==0){
+								if(strcmp(tokens[1],"127.0.0.1")==0){
+									printf("Cannot Connect to yourself..i\n");
+								}else{
+									printf("Given IP is not in the Serverlist\n");
+								}
+							}
+						}else{
+							printf("Your Connection LIst is full \n");
+						}
 					}else{
 						printf("YOU SHOULD REGISTER YOURSELF TO SERVER BEFORE CONNECT..\n");
 						continue;
@@ -473,9 +525,12 @@ int runCli(){
 				}else if(strcmp(tokens[0], "QUIT") == 0 && numTok ==1){
 					if(REGISTERED==TRUE){
 						send(cli_IP[1].sock,"QUIT", strlen("QUIT"), 0);
+						//notifying server that the client is quitting
 						int terminator = recv(cli_IP[1].sock, message, MAX_MSG,0);
+						//receive from server if quitting is confirmed
 						if(terminator) message[terminator] = '\0';
 						if(strcmp(message, "Q") == 0){
+						//IF it is confirmed.
 							close_all();
 							printf("Thanks For using ISSAC's Chatting Prog\n");
 							exit(1);
@@ -526,6 +581,7 @@ int runCli(){
 								//Cleaning up all client setup
 								}REGISTERED = FALSE;
 								fd_count =0;
+								cli_con_max = 1;		
 							}	
 						}else{
 						//message from other clients
