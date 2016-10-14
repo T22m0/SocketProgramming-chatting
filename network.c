@@ -272,6 +272,20 @@ int runServ(){
 					broadcast_msg("THE server is going off...\n");
 					if(close_all()) printf("CLOSED ALL CONNECTION\n");
 					exit(1);						
+				}else if(strcmp(tokens[0], "TERMINATE") == 0 && numTok == 2){
+					int index = atoi(tokens[0]);
+					if(index){
+						send(serv_IP[index].sock, "YOU ARE TERMINATED!", strlen("YOU ARE TERMINATED!"),0);
+						close(serv_IP[index].sock);
+						maxfd = findMaxFd(serv_IP[index].sock,maxfd);
+						FD_CLR(serv_IP[index].sock,&readfds);	
+						serv_IP[index].sock = 0;		
+						num_connection--;
+						LIST();
+						broadcast_msg(list);
+					}else{
+						printf("You typed wrond input..");
+					}
 				}else{
 					printf(serv_usage);
 				}
@@ -565,9 +579,9 @@ int runCli(){
 					}
 				}else if(strcmp(tokens[0], "LIST") ==0 && numTok ==1){
 					if(REGISTERED==TRUE){
-						printf("__________CONNECTED CLIENT IP LIST_______\n");
+						printf("__________CONNECTED CLIENT IP LIST_______\n\n");
 						LIST();
-						printf("__________SERVER CLIENT IP LIST__________\n");
+						printf("__________SERVER CLIENT IP LIST__________\n\n");
 						send(cli_IP[1].sock, "LIST", strlen("LIST"),0);
 						int terminator = recv(cli_IP[1].sock, list, MAX_LIST,0);
 						if(terminator) list[terminator] = '\0';
@@ -577,7 +591,19 @@ int runCli(){
 						continue;
 					}
 				}else if(strcmp(tokens[0], "TERMINATE") ==0 && numTok ==2){
-					
+					int index = atoi(tokens[0]);
+					if(index){
+						send(cli_IP[index].sock, "YOU ARE TERMINATED!", strlen("YOU ARE TERMINATED!"),0);
+						close(cli_IP[index].sock);
+						maxfd = findMaxFd(cli_IP[index].sock,maxfd);
+						FD_CLR(cli_IP[index].sock,&readfds);	
+						cli_IP[index].sock = 0;		
+						cli_con_max--;
+						LIST();
+						broadcast_msg(list);
+					}else{
+						printf("You typed wrond input..\n");
+					}
 				}else if(strcmp(tokens[0], "QUIT") == 0 && numTok ==1){
 					if(REGISTERED==TRUE){
 						send(cli_IP[1].sock,"QUIT", strlen("QUIT"), 0);
