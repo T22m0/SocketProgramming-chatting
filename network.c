@@ -164,10 +164,10 @@ void LIST(){
 			}
 		}
 	}else{
-		for(count=0; count < MAX_CLI_CONNECT; count++){
+		for(count=2; count < MAX_CLI_CONNECT; count++){
 			if(cli_IP[count].sock != 0){
 				sprintf(list+strlen(list),"%d:	%s		%s	%d\n"\
-				,count+1, getHost(cli_IP[count].sock_info),inet_ntoa(cli_IP[count].sock_info.sin_addr), ntohs(cli_IP[count].sock_info.sin_port));
+				,count-1, getHost(cli_IP[count].sock_info),inet_ntoa(cli_IP[count].sock_info.sin_addr), ntohs(cli_IP[count].sock_info.sin_port));
 			}
 		}
 	}
@@ -273,8 +273,8 @@ int runServ(){
 					if(close_all()) printf("CLOSED ALL CONNECTION\n");
 					exit(1);						
 				}else if(strcmp(tokens[0], "TERMINATE") == 0 && numTok == 2){
-					int index = atoi(tokens[0]);
-					if(index){
+					int index = atoi(tokens[1])-1;
+					if(index > 0){
 						send(serv_IP[index].sock, "YOU ARE TERMINATED!", strlen("YOU ARE TERMINATED!"),0);
 						close(serv_IP[index].sock);
 						maxfd = findMaxFd(serv_IP[index].sock,maxfd);
@@ -284,7 +284,7 @@ int runServ(){
 						LIST();
 						broadcast_msg(list);
 					}else{
-						printf("You typed wrond input..");
+						printf("You typed wrond input.. its prohibited to cloes %dth connection\n", index+1);
 					}
 				}else{
 					printf(serv_usage);
@@ -591,9 +591,10 @@ int runCli(){
 						continue;
 					}
 				}else if(strcmp(tokens[0], "TERMINATE") ==0 && numTok ==2){
-					int index = atoi(tokens[0]);
-					if(index){
-						send(cli_IP[index].sock, "YOU ARE TERMINATED!", strlen("YOU ARE TERMINATED!"),0);
+					int index = atoi(tokens[1])+1;
+					if(index > 1){
+						sprintf(message,"YOU ARE TERMINATED FROM %s",getHost(cli_IP[0].sock_info));
+						send(cli_IP[index].sock, message, strlen(message),0);
 						close(cli_IP[index].sock);
 						maxfd = findMaxFd(cli_IP[index].sock,maxfd);
 						FD_CLR(cli_IP[index].sock,&readfds);	
@@ -602,7 +603,7 @@ int runCli(){
 						LIST();
 						broadcast_msg(list);
 					}else{
-						printf("You typed wrond input..\n");
+						printf("You typed wrond input.. its prohibited to cloes %dth connection\n", index-1);
 					}
 				}else if(strcmp(tokens[0], "QUIT") == 0 && numTok ==1){
 					if(REGISTERED==TRUE){
@@ -634,7 +635,7 @@ int runCli(){
 								continue;
 							}
 						}
-						int index = atoi(tokens[1])-1;
+						int index = atoi(tokens[1])+1;
 						if(cli_IP[index].sock != 0){
 							send(cli_IP[index].sock, message, strlen(message),0);
 							printf("Message Sent to ID:<%d> \n",index+1);
