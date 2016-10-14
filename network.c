@@ -114,7 +114,7 @@ char* getHost(struct sockaddr_in addr){
 	getnameinfo((struct sockaddr*)&t_addr, sock_len, gethost, sizeof(gethost),NULL,0,0);
 	return gethost;
 }
-//get host name based on ipaddress..
+//get host name based on IP String
 char* getIP(char* hostname){
 	struct hostent *h;
 	if((h = gethostbyname(hostname)) ==NULL){
@@ -126,7 +126,7 @@ char* getIP(char* hostname){
 	inet_ntop(AF_INET, &t_addr.sin_addr, getip, INET_ADDRSTRLEN);
 	return getip;
 }
-// will return hostname from IP address and sve to gethost
+// will return hostname from IP address and save to getip
 char* getLOIP() {
  	sock temp;
 	bzero(&temp,sizeof(temp)); 
@@ -148,23 +148,27 @@ char* getLOIP() {
 	//and resolve network address to string IP format
 	return getip;
 }
-//get public ip using UDP connection 
+//get public ip using UDP connection USE GOOGLE DNS server 
 void LIST(){
 	sprintf(list, "id:	Hostnamed				IP		port\n");
 	//init LIST format
 	int count;
 	if(mode == 's'){
 		for(count=0; count < MAX_CONNECT; count++){
+		//scan through serv_IP
 			if(serv_IP[count].sock != 0 && count == 0){
+			//if it is server, no need modify port number
 				sprintf(list+strlen(list),"%d:	%s		%s	%d\n"\
 				,count+1, getHost(serv_IP[count].sock_info),inet_ntoa(serv_IP[count].sock_info.sin_addr), ntohs(serv_IP[count].sock_info.sin_port));
 			}else if(serv_IP[count].sock != 0){
+			//decrease port number of clients by 1
 				sprintf(list+strlen(list),"%d:	%s		%s	%d\n"\
 				,count+1, getHost(serv_IP[count].sock_info),inet_ntoa(serv_IP[count].sock_info.sin_addr), ntohs(serv_IP[count].sock_info.sin_port)-1);
 			}
 		}
 	}else{
 		for(count=2; count < MAX_CLI_CONNECT; count++){
+		//only shows Active client connection.
 			if(cli_IP[count].sock != 0){
 				sprintf(list+strlen(list),"%d:	%s		%s	%d\n"\
 				,count-1, getHost(cli_IP[count].sock_info),inet_ntoa(cli_IP[count].sock_info.sin_addr), ntohs(cli_IP[count].sock_info.sin_port));
@@ -189,10 +193,20 @@ void broadcast_msg(char* msg){
 int close_all(){
 	int i;
 	if(mode =='s'){
-		for(i = 1; i < MAX_CONNECT; i++) if(serv_IP[i].sock !=0) close(serv_IP[i].sock);
+		for(i = 1; i < MAX_CONNECT; i++) if(serv_IP[i].sock !=0){
+			close(serv_IP[i].sock);
+			FD_CLR(serv_IP[i].sock,&readfds);
+			serv_IP[i].sock =0;
+			num_connection--;
+		}
 		return 1;
 	}else if(mode =='c'){
-		for(i = 1; i < MAX_CLI_CONNECT; i++) if(cli_IP[i].sock!=0) close(cli_IP[i].sock);
+		for(i = 2; i < MAX_CLI_CONNECT; i++) if(cli_IP[i].sock!=0){
+			close(cli_IP[i].sock);
+			FD_CLR(cli_IP[i].sock,&readfds);
+			cli_IP[i].sock =0;
+			cli_con_max--;
+		}
 		return 1;
 	}
 		return -1;
@@ -226,8 +240,8 @@ int runServ(){
 				char action[3];
 				int terminator = recv(serv_IP[freespot].sock, action, 3, 0);
 				//if a client tries to connect..
-				printf("The message if %s,\n",action);
 				if(strcmp(action,"R")==0){
+				//Registering is the only possible connection to server listening socket
 					send(serv_IP[freespot].sock, "s", strlen("s"),0);
 					//send client if I am the server!
 					if(serv_IP[freespot].sock > maxfd) maxfd = serv_IP[freespot].sock;
@@ -246,7 +260,16 @@ int runServ(){
 					continue;
 				}
 			   }else{
-				printf("User OverFlow.. Ignoring all incoming!");
+				int temp = accept(serv_IP[1].sock, (struct sockaddr*) &t_addr, &sock_len);
+				//if a client tries to connect..
+				//temporary accept its call
+				char action[3];
+				int terminator = recv(temp, action, 3, 0);
+				send(temp, "N",strlen("N"),0);
+				//then... NO!
+				close(temp);
+				//I am leaving, not a word to talk to
+				printf("Some other client tried to connect to you, but you reached ur MAX connection\n");
 				continue;
 			   }
 			}else if(FD_ISSET(0,&tempfds)){
@@ -271,18 +294,30 @@ int runServ(){
 				}else if(strcmp(tokens[0], "QUIT") == 0 && numTok ==1){
 					broadcast_msg("THE server is going off...\n");
 					if(close_all()) printf("CLOSED ALL CONNECTION\n");
-					exit(1);						
+					exit(1);				
+				//broad all client that I am gonna quit in sec
+				//then Close all connection and exit		
 				}else if(strcmp(tokens[0], "TERMINATE") == 0 && numTok == 2){
 					int index = atoi(tokens[1])-1;
+					//since LIST index is starts from 1, which is server, 
+					//need to decrease by 1 to terminate right client
 					if(index > 0){
+					   if(serv_IP[index].sock!=0){
 						send(serv_IP[index].sock, "YOU ARE TERMINATED!", strlen("YOU ARE TERMINATED!"),0);
+						//SEnd bye message
 						close(serv_IP[index].sock);
+						//close the socket
 						maxfd = findMaxFd(serv_IP[index].sock,maxfd);
 						FD_CLR(serv_IP[index].sock,&readfds);	
 						serv_IP[index].sock = 0;		
 						num_connection--;
+						//update all necessary info
 						LIST();
 						broadcast_msg(list);
+						//and let other clients know this
+					   }else{
+						printf("You cannot terminate empty socket!\n");
+					   }
 					}else{
 						printf("You typed wrond input.. its prohibited to cloes %dth connection\n", index+1);
 					}
@@ -297,10 +332,10 @@ int runServ(){
 					if(FD_ISSET(serv_IP[t].sock,&tempfds)){			
 					//if the socket is triggered..
 						int terminator = recv(serv_IP[t].sock, r_command, MAX_COMMAND, 0);
-						//try to read from te client
+						//read from te client
 						if(terminator ==0){
-						//but if figured out the client is left for nothing..
-							printf("CLIENT LEFT!!\n");
+						//but if figured out the client is left..
+							printf("%dth CLIENT LEFT!!\n",t);
 							maxfd =	findMaxFd(serv_IP[t].sock,maxfd);
 							//find next highest socket and assign to maxfd							
 							close(serv_IP[t].sock);
@@ -321,7 +356,7 @@ int runServ(){
 							//parse token.
 							if(strcmp(tokens[0], "LIST")==0 && numTok ==1){
 								send(serv_IP[t].sock,list,MAX_LIST,0);
-								//send(serv_IP[t].sock, list, MAX_LIST,0);
+								//send current client list to the client!
 							}else if(strcmp(tokens[0], "CONNECT")==0 && numTok ==3){
 								int ip,i,p;
 								//ip if it is form of IP form, i for index, p for temp port
@@ -374,7 +409,7 @@ int runServ(){
 							}
 						}
 					}
-					if(fd_count-- < 0) break;
+					//if(fd_count-- < 0) break;
 					//need to check so that another epoch of select could excute
 				}
 			}
@@ -399,7 +434,7 @@ int runCli(){
 		//wait until there is an input and starts to work at coming inputs.
 			if(FD_ISSET(cli_IP[0].sock,&tempfds)){
 			//if other clients connecto this client.	
-				if(cli_con_max <= MAX_CLI_CONNECT){
+				if(cli_con_max < MAX_CLI_CONNECT){
 				//if client does not have its max connections with other peer,
 					int freespot = findEmptySock();
 					//search for the empty socket
@@ -433,13 +468,16 @@ int runCli(){
 						//increase number of connection by 1
 					}
 				}else{
-					printf("IP list is full..say NO! to all incoming\n");
 					int temp = accept(cli_IP[0].sock, (struct sockaddr*) &t_addr, &sock_len);
+					//if a client tries to connect..
 					//temporary accept its call
+					char action[3];
+					int terminator = recv(temp, action, 3, 0);
 					send(temp, "N",strlen("N"),0);
 					//then... NO!
 					close(temp);
 					//I am leaving, not a word to talk to
+					printf("Some other client tried to connect to you, but you reached ur MAX connection\n");
 					continue;
 				}
 			}else if(FD_ISSET(0,&tempfds)){
@@ -486,12 +524,13 @@ int runCli(){
 					ans[terminator] = '\0';
 					//receive from server that it is really the server
 					if(strcmp(ans,"s")==0){	
-						//if server everything is good!
+						//if receive message that it is the server, everything is good!
 						FD_SET(cli_IP[1].sock,&readfds);
 						maxfd = cli_IP[0].sock > cli_IP[1].sock ? cli_IP[0].sock : cli_IP[1].sock;
 						cli_con_max++;
 						REGISTERED = TRUE;	
 					}else{
+						//if it is not server.. close the connection
 						close(cli_IP[1].sock);
 						cli_IP[1].sock = 0;
 						printf("you are not connecting to the server..\n");
@@ -507,6 +546,7 @@ int runCli(){
 						if(!isValidIP(tokens[1])) target = getIP(tokens[1]);
 						else strcpy(target, tokens[1]);
 						//translate give input to IP string
+						//Just for checking connect to self case
 						if(strcmp(target, inet_ntoa(cli_IP[0].sock_info.sin_addr))==0){
 						//compare given domain and source's IP, if it matches..
 							printf("YOU CANNOT CONNECT TO YOURSELF...\n");
@@ -544,6 +584,7 @@ int runCli(){
 								}else{
 								//if can connect
 									send(cli_IP[freespot].sock,"C" ,sizeof("C"),0);
+									//send other side C flag for connecting
 									terminator = recv(cli_IP[freespot].sock, message,MAX_MSG,0);
 									message[terminator]='\0';
 									//receive message from the client if it also accepts
@@ -564,18 +605,13 @@ int runCli(){
 									}
 								}
 							}else if(strcmp(message,"N")==0){
-								if(strcmp(tokens[1],"127.0.0.1")==0){
-									printf("Cannot Connect to yourself..i\n");
-								}else{
-									printf("Given IP is not in the Serverlist\n");
-								}
+								printf("Given IP is not in the Serverlist\n");
 							}
 						}else{
 							printf("Your Connection LIst is full \n");
 						}
 					}else{
 						printf("YOU SHOULD REGISTER YOURSELF TO SERVER BEFORE CONNECT..\n");
-						continue;
 					}
 				}else if(strcmp(tokens[0], "LIST") ==0 && numTok ==1){
 					if(REGISTERED==TRUE){
@@ -588,20 +624,23 @@ int runCli(){
 						printf(list);
 					}else{
 						printf("YOU SHOULD REGISTER TO GET FRIEND LIST!\n");
-						continue;
 					}
 				}else if(strcmp(tokens[0], "TERMINATE") ==0 && numTok ==2){
 					int index = atoi(tokens[1])+1;
 					if(index > 1){
-						sprintf(message,"YOU ARE TERMINATED FROM %s",getHost(cli_IP[0].sock_info));
+					   if(cli_IP[index].sock !=0){
+						sprintf(message,"\nYOU ARE TERMINATED FROM %s\n",getHost(cli_IP[0].sock_info));
 						send(cli_IP[index].sock, message, strlen(message),0);
+						//send kind farewell
 						close(cli_IP[index].sock);
 						maxfd = findMaxFd(cli_IP[index].sock,maxfd);
 						FD_CLR(cli_IP[index].sock,&readfds);	
 						cli_IP[index].sock = 0;		
 						cli_con_max--;
 						LIST();
-						broadcast_msg(list);
+					   }else{
+						printf("You cannot terminate emypty socket~!!\n");
+					   }
 					}else{
 						printf("You typed wrond input.. its prohibited to cloes %dth connection\n", index-1);
 					}
@@ -635,6 +674,7 @@ int runCli(){
 								continue;
 							}
 						}
+						//rebuilding tokens into one sentance
 						int index = atoi(tokens[1])+1;
 						if(cli_IP[index].sock != 0){
 							send(cli_IP[index].sock, message, strlen(message),0);
@@ -670,12 +710,12 @@ int runCli(){
 								//return to initial maxfd
 								if(close_all()) printf("CLOSE all Connection\n");
 								//destroy all socket except listening one..
-								if((cli_IP[1].sock = socket(AF_INET, SOCK_STREAM, 0))==-1){
+							/*	if((cli_IP[1].sock = socket(AF_INET, SOCK_STREAM, 0))==-1){
 									perror("SERVER DISASTER\n");
 									exit(1);
 								}
-								cli_IP[1].sock_info.sin_family = AF_INET;
-								cli_IP[1].sock_info.sin_port = htons(income_port+1);
+								setsockopt(cli_IP[1].sock,SOL_SOCKET,SO_REUSEADDR,(char*)&OPT,sizeof(OPT));*/
+							/*	cli_IP[1].sock_info.sin_port = htons(income_port+1);
 								// cli_IP[0] will be uesd to listening port, 
 								// cli_IP[1] will be used to communicate to the server
 								cli_IP[1].sock_info.sin_addr.s_addr = inet_addr(getLOIP());
@@ -683,16 +723,8 @@ int runCli(){
 									perror("Cli- RE-BIND ERR:");
 									exit(1);
 								}		
-								//Restore the socket for the server..
-								int i;
-								for(i =2; i<MAX_CLI_CONNECT; i++){
-									if(cli_IP[i].sock != 0){
-										 FD_CLR(cli_IP[i].sock,&readfds);
-										 cli_IP[i].sock = 0; 
-									}
-								//no need to FD_CLR on cli_IP[1].sock.
-								//Cleaning up all client setup
-								}REGISTERED = FALSE;
+							*/	//Restore the socket for the server..
+								REGISTERED = FALSE;
 								fd_count =0;
 								cli_con_max = 1;		
 							}	
