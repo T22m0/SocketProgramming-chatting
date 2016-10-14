@@ -679,7 +679,7 @@ int runCli(){
 						int index = atoi(tokens[1])+1;
 						if(cli_IP[index].sock != 0){
 							send(cli_IP[index].sock, message, strlen(message),0);
-							printf("Message Sent to ID:<%d> \n",index+1);
+							printf("Message Sent to ID:<%d> \n",index-1);
 						}else printf("You are trying to send to empty socket..\n");
 					}else{
 						printf("YOu SHOULD REGISTER and CONNECT first \n");
@@ -721,8 +721,8 @@ int runCli(){
 								cli_IP[1].sock_info.sin_addr.s_addr = inet_addr(getLOIP());
 								//reset all 
 								int time;
-								for(time =0; time<=5; time++){
-									printf("\n%d\n",5-time);
+								for(time =1; time<=3; time++){
+									printf("Please wait %d seconds to init all setting\n",3-time);
 									sleep(1);
 								}
 								//wait to build new bind
@@ -744,7 +744,7 @@ int runCli(){
 								printf("\nMessage received from %s\n",IP);
 								printf("Sender's IP:%s\n",getIP(IP));
 								printf("Sender's Port:%d\n",ntohs(cli_IP[t].sock_info.sin_port));
-								printf("Message:%s\n",message);
+								printf("Message: %s\n",message);
 							}else{
 								printf("CLIENT LEFT!!\n");
 								maxfd =	findMaxFd(cli_IP[t].sock,maxfd);

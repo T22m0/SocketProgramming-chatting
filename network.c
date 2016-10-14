@@ -91,7 +91,7 @@ int findEmptySock(){
 	}
 } 
 //Return first index of serv_IP that has sock value of 0
-int findMaxFd(int cur_sock,int maxfd){
+int findNextMaxFd(int cur_sock,int maxfd){
 	int i;
 	if(cur_sock < maxfd) return maxfd;
 	else if(cur_sock == maxfd){
@@ -110,6 +110,21 @@ int findMaxFd(int cur_sock,int maxfd){
 }
 // When client quit, it needs to check if quitting client has max socket number.
 // if it holds, switch to second highest socket number.
+int findMaxFd(){
+	int i;
+	int temp_fd=0;
+	if(mode =='s'){
+		for(i = 0; i< MAX_CONNECT; i++){
+			if(serv_IP[i].sock > temp_fd) temp_fd = serv_IP[i].sock;
+		}
+	}else{
+		for(i = 0; i<MAX_CLI_CONNECT; i++){
+			if(cli_IP[i].sock > temp_fd) temp_fd = cli_IP[i].sock;
+		}
+	}
+	return temp_fd;
+}
+//return highest maxfd among all socket number
 char* getHost(struct sockaddr_in addr){
 	t_addr = addr;
 	getnameinfo((struct sockaddr*)&t_addr, sock_len, gethost, sizeof(gethost),NULL,0,0);
@@ -245,7 +260,7 @@ int runServ(){
 				//Registering is the only possible connection to server listening socket
 					send(serv_IP[freespot].sock, "s", strlen("s"),0);
 					//send client if I am the server!
-					if(serv_IP[freespot].sock > maxfd) maxfd = serv_IP[freespot].sock;
+					maxfd = findMaxFd();
 					//renew max range of fdset if connected socket number is greater than current maxfd
 					FD_SET(serv_IP[freespot].sock,&readfds);
 					//mark client on readfds
@@ -308,7 +323,7 @@ int runServ(){
 						//SEnd bye message
 						close(serv_IP[index].sock);
 						//close the socket
-						maxfd = findMaxFd(serv_IP[index].sock,maxfd);
+						maxfd = findNextMaxFd(serv_IP[index].sock,maxfd);
 						FD_CLR(serv_IP[index].sock,&readfds);	
 						serv_IP[index].sock = 0;		
 						num_connection--;
@@ -337,7 +352,7 @@ int runServ(){
 						if(terminator ==0){
 						//but if figured out the client is left..
 							printf("%dth CLIENT LEFT!!\n",t);
-							maxfd =	findMaxFd(serv_IP[t].sock,maxfd);
+							maxfd =	findNextMaxFd(serv_IP[t].sock,maxfd);
 							//find next highest socket and assign to maxfd							
 							close(serv_IP[t].sock);
 							//finish the socket
@@ -395,7 +410,7 @@ int runServ(){
 							}else if(strcasecmp(tokens[0], "QUIT") == 0 && numTok ==1){					
 								send(serv_IP[t].sock,"Q",strlen("0"),0);
 								//you are approved to leave my list!
-								maxfd = findMaxFd(serv_IP[t].sock,maxfd);
+								maxfd = findNextMaxFd(serv_IP[t].sock,maxfd);
 								//find next highest maxfd
 								close(serv_IP[t].sock);
 								//close with the client
@@ -457,7 +472,7 @@ int runCli(){
 					}else if(strcmp(action,"C")==0){
 					//it is COnnecting..
 						send(cli_IP[freespot].sock,"Y",strlen("Y"),0);
-						if(cli_IP[freespot].sock > maxfd) maxfd = cli_IP[freespot].sock;
+						maxfd = findMaxFd();
 						//if socketnubmer of newly connected socket is larger than original maxfd, update its value.
 						FD_SET(cli_IP[freespot].sock,&readfds);
 						//and add socket to the readfds.
@@ -527,7 +542,7 @@ int runCli(){
 					if(strcmp(ans,"s")==0){	
 						//if receive message that it is the server, everything is good!
 						FD_SET(cli_IP[1].sock,&readfds);
-						maxfd = cli_IP[0].sock > cli_IP[1].sock ? cli_IP[0].sock : cli_IP[1].sock;
+						maxfd = findMaxFd();
 						cli_con_max++;
 						REGISTERED = TRUE;	
 					}else{
@@ -545,7 +560,7 @@ int runCli(){
 					//if registeredi
 						char* target;
 						if(!isValidIP(tokens[1])) target = getIP(tokens[1]);
-						else strcpy(target, tokens[1]);
+						else target = tokens[1];
 						//translate give input to IP string
 						//Just for checking connect to self case
 						if(strcmp(target, inet_ntoa(cli_IP[0].sock_info.sin_addr))==0){
@@ -634,7 +649,7 @@ int runCli(){
 						send(cli_IP[index].sock, message, strlen(message),0);
 						//send kind farewell
 						close(cli_IP[index].sock);
-						maxfd = findMaxFd(cli_IP[index].sock,maxfd);
+						maxfd = findNextMaxFd(cli_IP[index].sock,maxfd);
 						FD_CLR(cli_IP[index].sock,&readfds);	
 						cli_IP[index].sock = 0;		
 						cli_con_max--;
@@ -706,12 +721,13 @@ int runCli(){
 							}else{
 							//server is gone.. so as other client..
 								printf("\nServer is gone..!!\nLOST ALL CONNECTION..\n");
-								printf("\nmeaning less who I am without server\n");
 								// begin initializing..
-								maxfd = cli_IP[0].sock;
+								//maxfd = cli_IP[0].sock;
 								//return to initial maxfd
-								if(close_all()) printf("CLOSE all client Connection\n");
+								//if(close_all()) printf("CLOSE all client Connection\n");
 								close(cli_IP[1].sock);
+								FD_CLR(cli_IP[1].sock,&readfds);
+								cli_IP[1].sock =0;	
 								//destroy all socket except listening one..
 								if((cli_IP[1].sock = socket(AF_INET, SOCK_STREAM, 0))==-1){
 									perror("SERVER DISASTER\n");
@@ -722,7 +738,7 @@ int runCli(){
 								//reset all 
 								int time;
 								for(time =1; time<=3; time++){
-									printf("Please wait %d seconds to init all setting\n",3-time);
+									printf("Please wait %d seconds to init all setting\n",4-time);
 									sleep(1);
 								}
 								//wait to build new bind
@@ -732,8 +748,7 @@ int runCli(){
 								}		
 								//Restore the socket for the server..
 								REGISTERED = FALSE;
-								fd_count =0;
-								cli_con_max = 1;
+								cli_con_max--;
 							}	
 						}else if(t > 1){
 						//message from other clients
@@ -747,7 +762,7 @@ int runCli(){
 								printf("Message: %s\n",message);
 							}else{
 								printf("CLIENT LEFT!!\n");
-								maxfd =	findMaxFd(cli_IP[t].sock,maxfd);
+								maxfd =	findNextMaxFd(cli_IP[t].sock,maxfd);
 								//find next highest socket and assign to maxfd							
 								close(cli_IP[t].sock);
 								//finish the socket
@@ -759,7 +774,7 @@ int runCli(){
 								//update list and
 								cli_con_max--;
 							}
-						}if(fd_count-- ==0) break;
+						}
 					}
 				}
 			}
