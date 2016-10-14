@@ -707,21 +707,25 @@ int runCli(){
 							//server is gone.. so as other client..
 								printf("\nServer is gone..!!\nLOST ALL CONNECTION..\n");
 								printf("\nmeaning less who I am without server\n");
-								exit(1);
-							/*	// begin initializing..
+								// begin initializing..
 								maxfd = cli_IP[0].sock;
 								//return to initial maxfd
-								if(close_all()) printf("CLOSE all Connection\n");
+								if(close_all()) printf("CLOSE all client Connection\n");
+								close(cli_IP[1].sock);
 								//destroy all socket except listening one..
 								if((cli_IP[1].sock = socket(AF_INET, SOCK_STREAM, 0))==-1){
 									perror("SERVER DISASTER\n");
 									exit(1);
 								}
-								setsockopt(cli_IP[1].sock,SOL_SOCKET,SO_REUSEADDR,(char*)&OPT,sizeof(OPT));
 								cli_IP[1].sock_info.sin_port = htons(income_port+1);
-								// cli_IP[0] will be uesd to listening port, 
-								// cli_IP[1] will be used to communicate to the server
 								cli_IP[1].sock_info.sin_addr.s_addr = inet_addr(getLOIP());
+								//reset all 
+								int time;
+								for(time =0; time<=5; time++){
+									printf("\n%d\n",5-time);
+									sleep(1);
+								}
+								//wait to build new bind
 						           	if((bind(cli_IP[1].sock, (struct sockaddr*)&cli_IP[1].sock_info, sock_len)) == -1){
 									perror("Cli- RE-BIND ERR:");
 									exit(1);
@@ -729,7 +733,7 @@ int runCli(){
 								//Restore the socket for the server..
 								REGISTERED = FALSE;
 								fd_count =0;
-								cli_con_max = 1;		*/
+								cli_con_max = 1;
 							}	
 						}else if(t > 1){
 						//message from other clients
